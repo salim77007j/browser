@@ -1,0 +1,66 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6.8 (msvc2022_64 + webengine)
+        shell: pwsh
+        run: |
+          pip install aqtinstall
+          aqt install-qt windows desktop 6.8 windows_msvc2022_64_win64_msvc2022_64 -m qtwebengine qtshadertools --outputdir C:\Qt
+          if (-not (Test-Path C:\Qt\6.8\msvc2022_64\bin\Qt6Core.dll)) {
+            Write-Host "Retrying with full module list"
+          }
+          Get-ChildItem C:\Qt\6.8\msvc2022_64\bin | Select-Object -First 5 Name
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure (MSVC)
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          set PATH=C:\Qt\6.8\msvc2022_64\bin;%PATH%
+          set CMAKE_PREFIX_PATH=C:\Qt\6.8\msvc2022_64
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl
+
+      - name: Build
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          set PATH=C:\Qt\6.8\msvc2022_64\bin;%PATH%
+          set CMAKE_PREFIX_PATH=C:\Qt\6.8\msvc2022_64
+          cmake --build build --parallel
+
+      - name: Deploy (windeployqt)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item build\app\kestrel.exe dist\
+          & C:\Qt\6.8\msvc2022_64\bin\windeployqt.exe --release --no-translations --no-opengl-sw dist\kestrel.exe
+          # webengine process + resources
+          Copy-Item C:\Qt\6.8\msvc2022_64\bin\QtWebEngineProcess.exe dist\ 2>$null
+          New-Item -ItemType Directory -Force -Path dist\resources | Out-Null
+          Copy-Item C:\Qt\6.8\msvc2022_64\resources\* dist\resources\ 2>$null
+          Get-ChildItem dist | Select-Object Name, Length
+
+      - name: Zip artifact
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\* -DestinationPath kestrel-windows-x64.zip
+          Get-Item kestrel-windows-x64.zip | Select-Object Name, Length
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kestrel-windows-x64
+          path: kestrel-windows-x64.zip

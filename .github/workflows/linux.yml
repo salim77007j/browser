@@ -1,0 +1,82 @@
+name: Linux Build
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt6 + build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qt6-base-dev qt6-base-dev-tools qt6-webengine-dev libqt6webengine6-data \
+            qt6-svg-dev qt6-webchannel-dev qt6-positioning-dev qt6-declarative-dev \
+            qt6-declarative-dev-tools libqt6qmlcompiler6 libgl1-mesa-dev \
+            cmake ninja-build libasound2-dev nasm python3
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Smoke test (offscreen launch)
+        run: |
+          QT_QPA_PLATFORM=offscreen build/app/kestrel --version 2>/dev/null || true
+          echo "Binary info:" && file build/app/kestrel && ls -la build/app/kestrel
+
+      - name: Bundle AppDir + AppImage-style tarball
+        run: |
+          mkdir -p Kestrel.AppDir/usr/bin Kestrel.AppDir/usr/lib Kestrel.AppDir/usr/share/applications
+          cp build/app/kestrel Kestrel.AppDir/usr/bin/
+          cp build/core/rust/release/LICENSE* Kestrel.AppDir/ 2>/dev/null || true
+          # Bundle Qt libs the binary needs
+          ldd build/app/kestrel | grep -oP '/[^ ]+/libQt6[A-Za-z0-9]+\.so[^ ]*' | sort -u | while read -r lib; do
+            cp "$lib" Kestrel.AppDir/usr/lib/ 2>/dev/null || true
+          done
+          # QtWebEngine resources + process + icu
+          cp /usr/lib/qt6/libexec/QtWebEngineProcess Kestrel.AppDir/usr/lib/ 2>/dev/null || \
+             cp /usr/lib/*/qt6/libexec/QtWebEngineProcess Kestrel.AppDir/usr/lib/ 2>/dev/null || true
+          mkdir -p Kestrel.AppDir/usr/share/qt6
+          cp -r /usr/share/qt6/resources Kestrel.AppDir/usr/share/qt6/ 2>/dev/null || true
+          cp -r /usr/share/qt6/translations Kestrel.AppDir/usr/share/qt6/ 2>/dev/null || true
+          cp -r /usr/lib/*/qt6/plugins Kestrel.AppDir/usr/lib/qt6-plugins 2>/dev/null || \
+             cp -r /usr/lib/qt6/plugins Kestrel.AppDir/usr/lib/qt6-plugins 2>/dev/null || true
+          # launcher with correct env
+          cat > Kestrel.AppDir/usr/bin/kestrel-launcher << 'LAUNCH'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")/.." && pwd)"
+          export LD_LIBRARY_PATH="$DIR/usr/lib:$LD_LIBRARY_PATH"
+          export QTWEBENGINEPROCESS_PATH="$DIR/usr/lib/QtWebEngineProcess"
+          export QTWEBENGINE_RESOURCES_PATH="$DIR/usr/share/qt6/resources"
+          export QTWEBENGINE_LOCALES_PATH="$DIR/usr/share/qt6/translations/qtwebengine_locales"
+          export QT_PLUGIN_PATH="$DIR/usr/lib/qt6-plugins"
+          exec "$DIR/usr/bin/kestrel" "$@"
+          LAUNCH
+          chmod +x Kestrel.AppDir/usr/bin/kestrel-launcher
+          cat > Kestrel.AppDir/kestrel.desktop << 'DESK'
+          [Desktop Entry]
+          Type=Application
+          Name=Kestrel
+          Exec=kestrel-launcher
+          Icon=k
+          Categories=Network;WebBrowser;
+          DESK
+          tar -czf kestrel-linux-x64.tar.gz Kestrel.AppDir
+          ls -la kestrel-linux-x64.tar.gz
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kestrel-linux-x64
+          path: kestrel-linux-x64.tar.gz
