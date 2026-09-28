@@ -27,7 +27,7 @@ jobs:
       - name: Install Qt 6.8 (gcc_64 + webengine)
         run: |
           pip install aqtinstall
-          aqt install-qt linux desktop 6.8.3 linux_gcc_64 -m qtwebengine qtshadertools --outputdir ~/Qt
+          aqt install-qt linux desktop 6.8.3 linux_gcc_64 -m qtwebengine qtwebchannel qtshadertools --outputdir ~/Qt
           ls ~/Qt/6.8.3/gcc_64/bin | head -5
 
       - name: Install Rust
