@@ -2,7 +2,8 @@ name: Windows build
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
 
@@ -12,7 +13,6 @@ jobs:
     timeout-minutes: 240
     env:
       MOZTOOLS_PATH: ${{ github.workspace }}\dependencies\moztools\4.0
-      LIBCLANG_PATH: ${{ env.LLVM_PATH }}\bin
     steps:
       - uses: actions/checkout@v4
 
@@ -37,14 +37,15 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            .
+          workspaces: .
           cache-on-failure: true
 
       - name: Test core
         run: cargo test -p kestrel-core
 
       - name: Build shell (release)
+        env:
+          LIBCLANG_PATH: ${{ env.LLVM_PATH }}\bin
         run: cargo build --release -p kestrel-shell
 
       - name: Package
