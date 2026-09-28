@@ -128,7 +128,7 @@ impl Gui {
             })
         }));
         match result {
-            Ok(_) => eprintln!("KESTREL: frame ok"),
+            Ok(out) => eprintln!("KESTREL: frame ok shapes={} clip_rects={}", out.shapes.len(), out.shapes.iter().map(|s| s.clip_rect.width()).sum::<f32>() as i32),
             Err(_) => eprintln!("KESTREL: frame PANICKED"),
         }
         st.last_repaint_need = false;
@@ -167,6 +167,10 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
         eprintln!("KESTREL: screen_rect={sr:?}");
         ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("probe")))
             .rect_filled(egui::Rect::from_min_size(egui::pos2(200.0, 120.0), egui::vec2(400.0, 300.0)), 0.0, egui::Color32::RED);
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::new("probe-mid")))
+            .rect_filled(egui::Rect::from_min_size(egui::pos2(50.0, 300.0), egui::vec2(100.0, 100.0)), 0.0, egui::Color32::ORANGE);
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("probe-bg")))
+            .rect_filled(egui::Rect::from_min_size(egui::pos2(50.0, 420.0), egui::vec2(100.0, 100.0)), 0.0, egui::Color32::PURPLE);
         ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("probe-text")))
             .text(egui::pos2(220.0, 150.0), egui::Align2::LEFT_TOP, "PROBE TEXT 123", egui::FontId::proportional(28.0), egui::Color32::WHITE);
         egui::Area::new(egui::Id::new("probe-area"))
