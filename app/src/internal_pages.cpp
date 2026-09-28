@@ -377,9 +377,8 @@ load();
 
 static QString privacyPage(bool isPrivate) {
     return shell(QStringLiteral("Privacy Dashboard"), QStringLiteral(R"HTML(
-<div class="page">
+<div class="dash">
   <div class="pagehead"><h1>Privacy Dashboard</h1><span class="muted">Live protection status</span></div>
-  <div class="dash">
     <div class="dash-hero card">
       <div class="shield-ring" id="ring"><div class="shield-core">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 22s8-3.5 8-10V5l-8-3-8 3v7c0 6.5 8 10 8 10z"/><path d="m9 11.5 2 2 4-4.5"/></svg>

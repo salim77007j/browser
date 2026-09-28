@@ -122,8 +122,10 @@ impl FilterEngine {
     }
 
     /// Network request check. Returns true when the request should be blocked.
+    /// Empty source_url (top-level navigation) is treated as first-party.
     pub fn check(&self, url: &str, source_url: &str, req_type: &str) -> bool {
-        let req = match Request::new(url, source_url, req_type) {
+        let source = if source_url.is_empty() { url } else { source_url };
+        let req = match Request::new(url, source, req_type) {
             Ok(r) => r,
             Err(_) => return false,
         };

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html><head><title>Fingerprint Test</title></head><body>
+<h1>Fingerprint Surface Test</h1>
+<div id="r"></div>
+<script>
+const r = document.getElementById('r');
+function hash(s){ let h=0; for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))|0;} return h>>>0; }
+const c = document.createElement('canvas'); c.width=200; c.height=50;
+const ctx = c.getContext('2d');
+ctx.textBaseline = 'top'; ctx.font = '17px "Arial"'; ctx.fillStyle='#f60';
+ctx.fillRect(0,0,120,30); ctx.fillStyle='#069'; ctx.fillText('Kestrel,fp', 2, 12);
+const canvasHash = hash(c.toDataURL()).toString(16);
+let audio = 'n/a';
+try {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ctxA = new AC(); const o = ctxA.createOscillator(); const an = ctxA.createAnalyser();
+  const f = ctxA.createFrequencyData ? null : null;
+  const buf = ctxA.createBuffer(1, 5000, 44100);
+  const d = buf.getChannelData(0);
+  let sum = 0; for (let i=0;i<d.length;i++) sum += Math.abs(d[i]);
+  audio = sum.toFixed(8);
+} catch(e){}
+let gl = 'n/a';
+try {
+  const g = document.createElement('canvas').getContext('webgl');
+  gl = g.getParameter(g.getExtension('WEBGL_debug_renderer_info') ? 37446 : 7937);
+} catch(e){}
+r.innerHTML = '<p><b>canvas:</b> ' + canvasHash + '</p>' +
+  '<p><b>audio sum:</b> ' + audio + '</p>' +
+  '<p><b>webgl renderer:</b> ' + gl + '</p>' +
+  '<p><b>cores:</b> ' + navigator.hardwareConcurrency + '</p>' +
+  '<p><b>deviceMemory:</b> ' + (navigator.deviceMemory || 'n/a') + '</p>';
+</script>
+</body></html>

@@ -10,7 +10,6 @@
 #include <QJsonParseError>
 #include <QJsonArray>
 #include <QPointer>
-#include <cstdio>
 
 KestrelSchemeHandler::KestrelSchemeHandler(bool isPrivate, QObject *parent)
     : QWebEngineUrlSchemeHandler(parent), m_isPrivate(isPrivate) {}
@@ -48,17 +47,14 @@ void KestrelSchemeHandler::requestStarted(QWebEngineUrlRequestJob *job) {
                     for (const auto &e : adoc.array()) args.append(e.toVariant());
                 }
             }
-            fprintf(stderr, "[bridge] method=%s args=%s\n", method.toUtf8().constData(), argsRaw.constData());
             static QPointer<KestrelBridge> sharedBridge;
             if (sharedBridge.isNull())
                 sharedBridge = new KestrelBridge(this);
             const QVariant result = sharedBridge->dispatch(method, args);
-            fprintf(stderr, "[bridge] dispatched ok: %s\n", method.toUtf8().constData());
             QBuffer *jbuf = new QBuffer(job);
             jbuf->setData(QJsonDocument::fromVariant(result).toJson(QJsonDocument::Compact));
             jbuf->open(QIODevice::ReadOnly);
             job->reply(QByteArrayLiteral("application/json"), jbuf);
-            fprintf(stderr, "[bridge] replied: %s\n", method.toUtf8().constData());
             return;
         }
 

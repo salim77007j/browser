@@ -102,6 +102,24 @@ KestrelApp::KestrelApp(QObject *parent) : QObject(parent) {
     ps->setAttribute(QWebEngineSettings::PdfViewerEnabled, true);
     ps->setAttribute(QWebEngineSettings::PlaybackRequiresUserGesture, true);
 
+    // Seed speed dial on first run
+    if (getSetting("speeddial_seeded", "0") != "1") {
+        const QList<QPair<QString, QString>> defaults = {
+            {"https://duckduckgo.com", "DuckDuckGo"},
+            {"https://www.wikipedia.org", "Wikipedia"},
+            {"https://github.com", "GitHub"},
+            {"https://news.ycombinator.com", "Hacker News"},
+            {"https://www.reddit.com", "Reddit"},
+            {"https://www.youtube.com", "YouTube"},
+        };
+        if (m_core) {
+            for (const auto &d : defaults)
+                kestrel_speeddial_add(static_cast<KestrelCore *>(m_core),
+                                      d.first.toUtf8().constData(), d.second.toUtf8().constData());
+            setSetting("speeddial_seeded", "1");
+        }
+    }
+
     // Load filter engine in background of startup
     if (qEnvironmentVariableIsEmpty("KESTREL_NO_FILTERS"))
         reloadFilters();
@@ -165,18 +183,31 @@ void KestrelApp::setTheme(const QString &theme, const QString &accent) {
 
 void KestrelApp::reloadFilters() {
     if (!m_core) return;
-    QJsonArray lists;
+    // Rust core reads from the filesystem: materialize bundled qrc lists to disk.
+    static const char *ids[3] = {"easylist", "easyprivacy", "annoyances"};
     static const char *files[3] = {":/resources/filters/easylist.txt",
                                    ":/resources/filters/easyprivacy.txt",
                                    ":/resources/filters/annoyances.txt"};
+    const QString filterDir = m_profileDir + QStringLiteral("/filters");
+    QDir().mkpath(filterDir);
+    QJsonArray lists;
     for (int i = 0; i < 3; ++i) {
-        const bool enabled = getSetting(KestrelApp::FilterListIds[i], "1") == "1";
+        const bool enabled = getSetting(ids[i], "1") == "1";
         if (!enabled) continue;
-        lists.append(QJsonObject{{"id", KestrelApp::FilterListIds[i]}, {"path", files[i]}});
+        const QString dest = filterDir + QStringLiteral("/") + ids[i] + ".txt";
+        QFile src(files[i]);
+        if (!QFile::exists(dest) && src.open(QIODevice::ReadOnly)) {
+            QFile out(dest);
+            if (out.open(QIODevice::WriteOnly | QIODevice::Truncate))
+                out.write(src.readAll());
+        }
+        if (QFile::exists(dest))
+            lists.append(QJsonObject{{"id", ids[i]}, {"path", dest}});
     }
     QJsonObject payload{{"lists", lists}, {"custom", getSetting("custom_rules", "")}};
-    kestrel_reload_filters(static_cast<KestrelCore *>(m_core),
+    const int ok = kestrel_reload_filters(static_cast<KestrelCore *>(m_core),
                            QJsonDocument(payload).toJson(QJsonDocument::Compact).constData());
+    fprintf(stderr, "[kestrel] filter engine reload: %d (%d lists)\n", ok, lists.size());
 }
 
 QStringList KestrelApp::filterListPaths() const {

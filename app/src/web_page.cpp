@@ -143,6 +143,8 @@ QWebEngineScript makeScript(const QString &name, const QString &src,
 KestrelPage::KestrelPage(QWebEngineProfile *profile, QObject *parent)
     : QWebEnginePage(profile, parent) {
     m_private = profile->isOffTheRecord();
+    // Page-level interceptor (profile-level one is installed in KestrelApp)
+    setUrlRequestInterceptor(new RequestInterceptor(this));
 
     // Certificate errors: harden — reject invalid certs, remember host for
     // HTTPS-First fallback. (Qt6 exposes this as a signal.)

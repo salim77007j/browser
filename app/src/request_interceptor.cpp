@@ -6,6 +6,7 @@
 #include <QUrl>
 #include <QUrlQuery>
 #include <QMutexLocker>
+#include <cstdio>
 
 static QSet<QString> g_httpsFailed;
 static QMutex g_httpsMutex;
@@ -101,8 +102,14 @@ void RequestInterceptor::interceptRequest(QWebEngineUrlRequestInfo &info) {
             ? initiator.host() != url.host()
             : !url.host().endsWith(initiator.host()) && !initiator.host().endsWith(url.host()));
 
-    /* ---- 1. HTTPS-First (main frame http → https) ---- */
-    if (mainFrame && scheme == "http" && app->getSetting("https_first", "1") == "1") {
+    /* ---- 1. HTTPS-First (main frame http → https) ----
+       Never upgrade localhost / private-network hosts (standard practice). */
+    auto isLocalHost = [](const QString &h) {
+        return h == "localhost" || h == "127.0.0.1" || h == "::1" || h == "[::1]" ||
+               h.endsWith(".local") || h.startsWith("192.168.") || h.startsWith("10.") ||
+               h.startsWith("172.");
+    };
+    if (mainFrame && scheme == "http" && app->getSetting("https_first", "1") == "1" && !isLocalHost(url.host())) {
         if (!tlsFailed(url.host())) {
             QUrl upgraded = url;
             upgraded.setScheme("https");

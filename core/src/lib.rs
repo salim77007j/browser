@@ -110,7 +110,10 @@ pub unsafe extern "C" fn kestrel_check_url(
     let url = c2s(url);
     let src = c2s(source_url);
     let typ = c2s(req_type);
-    let blocked = core.filters.check(url, src, typ);
+    let blocked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        core.filters.check(url, src, typ)
+    }))
+    .unwrap_or(false);
     if blocked {
         let host = host_of(url);
         core.filters.record_block(&host);
