@@ -4,7 +4,7 @@
 > 4.1 GB RAM), rendered under the same Xvfb 1280×800 display, loading the
 > same page set (example.com / wikipedia.org / news.ycombinator.com).
 > Resource numbers are process-tree aggregates (RSS via /proc, CPU via
-> utime+stime deltas). Evidence screenshots live in `download/shots/`.
+> utime+stime deltas). Evidence screenshots live in `docs/img/` (this repo).
 
 ## 1. Head-to-head results
 
@@ -41,8 +41,9 @@
 | Privacy dashboard | dedicated page, per-host stats, 100% ring | none (scattered) | about:protection |
 | Theme | dark/light + 6 accents | light default | follows OS |
 
-Screenshots: `comp_chrome_site.png`, `comp_firefox_site.png` vs
-`example.png`, `settings.png`, `privacy.png`, `history.png`.
+![Side by side](img/compare_side_by_side.png)
+
+Also: `settings.png`, `privacy.png`, `history.png`, `ci_binary_run.png` (CI artifact run).
 
 ## 3. Feature completeness vs majors
 
@@ -78,3 +79,15 @@ meaningfully lower idle footprint than Chrome and Firefox, first-party
 ad/tracker blocking out of the box, and zero first-run consent friction.
 It is suitable for real users who prioritize speed, memory and privacy,
 with extension support and sync as the main roadmap items.
+
+## 6. Shield + fingerprint evidence
+
+| | |
+|---|---|
+| ![Shield blocks 5/5](img/shieldtest6.png) | Shield badge shows **5** — doubleclick, googlesyndication, googletagmanager, googleads, tiktok analytics all blocked by the Rust engine. |
+| ![FP run 1](img/fp1_crop.png) / ![FP run 2](img/fp2_crop.png) | Canvas hash differs across loads (`a2dbd79c` vs `2e4f22ca`), audio noise randomized, `hardwareConcurrency` spoofed to 4 on a 2-core machine. |
+
+## 7. CI artifacts
+
+- **Linux**: `kestrel-linux-x64.tar.gz` — self-contained AppDir (binary + Qt libs + QtWebEngineProcess + resources + launcher). Verified: downloaded, extracted, launched under Xvfb, rendered live pages (`img/ci_binary_run.png`).
+- **Windows**: `kestrel-windows-x64.zip` — kestrel.exe + QtWebEngineProcess.exe + Qt 6.8.2 MSVC DLLs + resources. Contents verified (54 files, all engine DLLs/resources present).

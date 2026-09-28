@@ -7,7 +7,7 @@ Rust core + Qt 6 native UI + Chromium-grade rendering — designed to be
 faster and lighter than the majors while blocking ads, trackers and
 fingerprinting by default.
 
-![Kestrel New Tab](../download/shots/ntp12.png)
+![Kestrel New Tab](docs/img/ntp12.png)
 
 ## Architecture
 
