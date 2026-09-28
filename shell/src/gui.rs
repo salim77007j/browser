@@ -128,7 +128,7 @@ impl Gui {
             })
         }));
         match result {
-            Ok(out) => eprintln!("KESTREL: frame ok shapes={} clip_rects={}", out.shapes.len(), out.shapes.iter().map(|s| s.clip_rect.width()).sum::<f32>() as i32),
+            Ok(_) => eprintln!("KESTREL: frame ok"),
             Err(_) => eprintln!("KESTREL: frame PANICKED"),
         }
         st.last_repaint_need = false;
