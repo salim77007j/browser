@@ -12,12 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Qt 6.8.3 (win64_msvc2022_64 + webengine)
+      - name: Install Qt 6.8.2 (win64_msvc2022_64 + webengine)
         shell: pwsh
         run: |
           pip install aqtinstall
-          aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtwebengine qtwebchannel qtpositioning --outputdir C:\Qt
-          if (-not (Test-Path C:\Qt\6.8.3\msvc2022_64\bin\Qt6Core.dll)) { throw "Qt install failed" }
+          aqt install-qt windows desktop 6.8.2 win64_msvc2022_64 -m qtwebengine qtwebchannel qtpositioning --outputdir C:\Qt
+          if (-not (Test-Path C:\Qt\6.8.2\msvc2022_64\bin\Qt6Core.dll)) { throw "Qt install failed" }
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -26,16 +26,16 @@ jobs:
         shell: cmd
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          set PATH=C:\Qt\6.8.3\msvc2022_64\bin;%PATH%
-          set CMAKE_PREFIX_PATH=C:\Qt\6.8.3\msvc2022_64
+          set PATH=C:\Qt\6.8.2\msvc2022_64\bin;%PATH%
+          set CMAKE_PREFIX_PATH=C:\Qt\6.8.2\msvc2022_64
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl
 
       - name: Build
         shell: cmd
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          set PATH=C:\Qt\6.8.3\msvc2022_64\bin;%PATH%
-          set CMAKE_PREFIX_PATH=C:\Qt\6.8.3\msvc2022_64
+          set PATH=C:\Qt\6.8.2\msvc2022_64\bin;%PATH%
+          set CMAKE_PREFIX_PATH=C:\Qt\6.8.2\msvc2022_64
           cmake --build build --parallel
 
       - name: Deploy + package
@@ -43,11 +43,11 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item build\app\kestrel.exe dist\
-          & C:\Qt\6.8.3\msvc2022_64\bin\windeployqt.exe --release --no-translations dist\kestrel.exe
-          Copy-Item C:\Qt\6.8.3\msvc2022_64\bin\QtWebEngineProcess.exe dist\ -ErrorAction SilentlyContinue
-          Copy-Item C:\Qt\6.8.3\msvc2022_64\bin\Qt6WebEngineCore.dll dist\ -ErrorAction SilentlyContinue
+          & C:\Qt\6.8.2\msvc2022_64\bin\windeployqt.exe --release --no-translations dist\kestrel.exe
+          Copy-Item C:\Qt\6.8.2\msvc2022_64\bin\QtWebEngineProcess.exe dist\ -ErrorAction SilentlyContinue
+          Copy-Item C:\Qt\6.8.2\msvc2022_64\bin\Qt6WebEngineCore.dll dist\ -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path dist\resources | Out-Null
-          Copy-Item C:\Qt\6.8.3\msvc2022_64\resources\* dist\resources\ -ErrorAction SilentlyContinue
+          Copy-Item C:\Qt\6.8.2\msvc2022_64\resources\* dist\resources\ -ErrorAction SilentlyContinue
           Get-ChildItem dist | Select-Object Name, Length
 
       - name: Zip artifact
