@@ -58,6 +58,9 @@ pub struct St {
     location: String,
     location_dirty: bool,
     focus_omnibox_req: bool,
+    omnibox_focused: bool,
+    suggestions_open: bool,
+    menu_open: bool,
     suggestions: Vec<SuggestItem>,
     suggestion_sel: usize,
     style_set: bool,
@@ -84,6 +87,9 @@ impl Gui {
                 location: String::new(),
                 location_dirty: false,
                 focus_omnibox_req: false,
+                omnibox_focused: false,
+                suggestions_open: false,
+                menu_open: false,
                 suggestions: Vec::new(),
                 suggestion_sel: 0,
                 style_set: false,
@@ -105,6 +111,12 @@ impl Gui {
         self.st.borrow().last_repaint_need
     }
 
+    /// True while any animated UI surface is open (caret blink, dropdowns, menus).
+    pub fn ui_active(&self) -> bool {
+        let st = self.st.borrow();
+        st.omnibox_focused || st.suggestions_open || st.menu_open
+    }
+
     pub fn request_omnibox_focus(&self) {
         self.st.borrow_mut().focus_omnibox_req = true;
     }
@@ -121,16 +133,9 @@ impl Gui {
         let mut gl = self.gl.borrow_mut();
         let mut st = self.st.borrow_mut();
         gl.rendering_context.make_current().ok();
-        eprintln!("KESTREL: frame begin");
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            gl.context.run(&win.winit, |ctx| {
-                draw_ui(ctx, win, &mut st);
-            })
-        }));
-        match result {
-            Ok(_) => eprintln!("KESTREL: frame ok"),
-            Err(_) => eprintln!("KESTREL: frame PANICKED"),
-        }
+        gl.context.run(&win.winit, |ctx| {
+            draw_ui(ctx, win, &mut st);
+        });
         st.last_repaint_need = false;
     }
 
@@ -326,6 +331,7 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
                         .show(ui);
                     let omnibox_rect = out.response.rect;
                     let editing_now = out.response.has_focus();
+                    st.omnibox_focused = editing_now;
                     if st.focus_omnibox_req {
                         ctx.memory_mut(|m| m.request_focus(omni_id));
                         st.focus_omnibox_req = false;
@@ -389,7 +395,7 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
                             let s = &st.suggestions[st.suggestion_sel.min(st.suggestions.len() - 1)];
                             commit = Some(s.url().to_string());
                         }
-                        suggestions_open = true;
+                        st.suggestions_open = true;
                     } else if editing_now && enter {
                         commit = Some(st.location.clone());
                     }
@@ -460,6 +466,7 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
                             ui.memory_mut(|m| m.toggle_popup(Id::new("main-menu")));
                         }
                         let menu_open = ui.memory(|m| m.is_popup_open(Id::new("main-menu")));
+                        st.menu_open = menu_open;
                         if menu_open {
                             main_menu(ui, win, menu_resp.rect.left_bottom() + egui::vec2(0.0, 4.0));
                         }

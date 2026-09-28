@@ -44,6 +44,7 @@ pub struct KestrelWindow {
     pub scratch: RefCell<HashMap<String, String>>,
     pub next_key: Cell<u64>,
     pub capture_pending: RefCell<Vec<(String, PathBuf)>>,
+    pub render_count: Cell<u32>,
 }
 
 impl KestrelWindow {
@@ -127,6 +128,7 @@ impl KestrelWindow {
             scratch: RefCell::new(HashMap::new()),
             next_key: Cell::new(1),
             capture_pending: RefCell::new(Vec::new()),
+            render_count: Cell::new(0),
         };
 
         let restore: Option<String> = core.store.session_load();
@@ -1045,7 +1047,6 @@ impl KestrelWindow {
     }
 
     fn render(&mut self) {
-        eprintln!("KESTREL: render() called");
         {
             let gui = self.gui.borrow_mut();
             gui.update(self);
@@ -1054,8 +1055,14 @@ impl KestrelWindow {
             let gui = self.gui.borrow_mut();
             gui.paint(&self.winit);
         }
-        self.needs_redraw.set(false);
-        eprintln!("KESTREL: render() done");
+        // egui needs a few warm-up frames after startup (font atlas upload,
+        // area positioning). Keep redrawing for the first few frames.
+        if self.render_count.get() < 4 {
+            self.render_count.set(self.render_count.get() + 1);
+            self.needs_redraw.set(true);
+        } else {
+            self.needs_redraw.set(false);
+        }
     }
 
     pub fn on_external_change(&self) {
@@ -1066,6 +1073,7 @@ impl KestrelWindow {
         self.needs_redraw.get()
             || self.tabs.iter().any(|t| t.loading)
             || !self.prompts.borrow().is_empty()
+            || self.gui.borrow().ui_active()
             || self.gui.borrow().egui_wants_repaint()
     }
 
