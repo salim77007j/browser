@@ -168,26 +168,6 @@ fn ensure_style(st: &mut St, ctx: &egui::Context) {
 fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
         ensure_style(st, ctx);
         sync_location(win, st);
-        let sr = ctx.screen_rect();
-        eprintln!("KESTREL: screen_rect={sr:?}");
-        ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("probe")))
-            .rect_filled(egui::Rect::from_min_size(egui::pos2(200.0, 120.0), egui::vec2(400.0, 300.0)), 0.0, egui::Color32::RED);
-        ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::new("probe-mid")))
-            .rect_filled(egui::Rect::from_min_size(egui::pos2(50.0, 300.0), egui::vec2(100.0, 100.0)), 0.0, egui::Color32::ORANGE);
-        ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("probe-bg")))
-            .rect_filled(egui::Rect::from_min_size(egui::pos2(50.0, 420.0), egui::vec2(100.0, 100.0)), 0.0, egui::Color32::PURPLE);
-        ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("probe-text")))
-            .text(egui::pos2(220.0, 150.0), egui::Align2::LEFT_TOP, "PROBE TEXT 123", egui::FontId::proportional(28.0), egui::Color32::WHITE);
-        egui::Area::new(egui::Id::new("probe-area"))
-            .fixed_pos(egui::pos2(650.0, 130.0))
-            .show(ctx, |ui| {
-                ui.add(egui::Button::new(egui::RichText::new("Probe Btn").color(egui::Color32::YELLOW).size(20.0)).fill(egui::Color32::BLUE));
-            });
-        egui::Area::new(egui::Id::new("probe-area2"))
-            .fixed_pos(egui::pos2(650.0, 190.0))
-            .show(ctx, |ui| {
-                egui::TopBottomPanel::top("probe-panel").frame(egui::Frame::default().fill(egui::Color32::GREEN)).show_inside(ui, |_| {});
-            });
 
         // Background under the content area (webview blits first, then chrome paints;
         // for internal pages the page paints its own bg over this).
