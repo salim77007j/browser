@@ -2,11 +2,10 @@
 
 use crate::state::{DelegateMsg, KestrelEvent};
 use kestrel_core::KestrelCore;
-use servo::webview_delegate::{
-    EmbedderControl, NavigationRequest, PermissionRequest, WebViewDelegate, WebResourceLoad,
-    WebResourceResponse,
+use servo::{
+    Cursor, EmbedderControl, LoadStatus, NavigationRequest, PermissionRequest, WebView,
+    WebViewDelegate, WebResourceLoad, WebResourceResponse,
 };
-use servo::{Cursor, LoadStatus, ServoUrl, WebView};
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
@@ -94,7 +93,7 @@ impl KestrelDelegate {
 }
 
 impl WebViewDelegate for KestrelDelegate {
-    fn notify_url_changed(&self, webview: WebView, url: ServoUrl) {
+    fn notify_url_changed(&self, webview: WebView, url: url::Url) {
         if let Some(s) = self.shared() {
             s.push(DelegateMsg::UrlChanged(webview.id(), url.to_string()));
         }
@@ -116,7 +115,7 @@ impl WebViewDelegate for KestrelDelegate {
         }
     }
 
-    fn notify_history_changed(&self, webview: WebView, entries: Vec<ServoUrl>, current: usize) {
+    fn notify_history_changed(&self, webview: WebView, entries: Vec<url::Url>, current: usize) {
         if let Some(s) = self.shared() {
             let back = current > 0;
             let fwd = current + 1 < entries.len();
@@ -163,16 +162,11 @@ impl WebViewDelegate for KestrelDelegate {
             navigation.allow();
             return;
         };
-        let url = navigation.url().clone();
+        let url = navigation.url.clone();
         if kestrel_core::privacy::looks_like_download(&url.to_string()) {
             navigation.deny();
-            // Real download through our own manager (progress tracked in kestrel://downloads).
-            let referer = None;
-            let _ = referer;
-            let proxy = s.proxy.clone();
             let url_str = url.to_string();
-            // The window assigns ids/paths; delegate asks the window via a command event.
-            let _ = proxy.send_event(KestrelEvent::DownloadQueued(url_str));
+            let _ = s.proxy.send_event(KestrelEvent::DownloadQueued(url_str));
             return;
         }
         navigation.allow();

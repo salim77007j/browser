@@ -15,40 +15,19 @@ const OK: Color32 = Color32::from_rgb(0x33, 0xD1, 0x7A);
 const WARN: Color32 = Color32::from_rgb(0xFF, 0xB0, 0x3A);
 const BAD: Color32 = Color32::from_rgb(0xFF, 0x5C, 0x7A);
 
-pub fn draw_crash(ctx: &Context, win: &KestrelWindow, rect: Rect, reason: &str) {
-    egui::CentralPanel::default().frame(egui::Frame::default().fill(CARD)).show(ctx, |_| {
-        // drawn relative to screen; fine for full-window crash view
+pub fn draw_crash(ctx: &Context, win: &KestrelWindow, _rect: Rect, reason: &str) {
+    egui::CentralPanel::default().frame(egui::Frame::default().fill(CARD)).show(ctx, |ui| {
+        ui.add_space(80.0);
+        ui.vertical_centered(|ui| {
+            ui.label(RichText::new("This tab crashed").size(26.0).strong().color(TEXT));
+            ui.add_space(4.0);
+            ui.label(RichText::new(format!("Reason: {reason}")).color(DIM));
+            ui.add_space(16.0);
+            if ui.button(egui::RichText::new("Reload page").size(15.0)).clicked() {
+                win.commands.borrow_mut().push(UiCommand::Reload);
+            }
+        });
     });
-    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("crash")));
-    painter.rect_filled(rect, 0.0, CARD);
-    painter.text(
-        rect.center() - egui::vec2(0.0, 40.0),
-        egui::Align2::CENTER_CENTER,
-        "This tab crashed",
-        26.0,
-        TEXT,
-    );
-    painter.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        format!("Reason: {reason}"),
-        14.0,
-        DIM,
-    );
-    let btn_rect = Rect::from_center_size(rect.center() + egui::vec2(0.0, 60.0), egui::vec2(160.0, 34.0));
-    let resp = ctx.interact(
-        egui::LayerId::new(egui::Order::Foreground, egui::Id::new("crash-reload")),
-        btn_rect,
-        egui::Sense::click(),
-    );
-    if resp.hovered() {
-        painter.rect_filled(btn_rect, 6.0, Color32::from_rgb(0x2C, 0x2C, 0x3E));
-    }
-    painter.rect_filled(btn_rect, 6.0, ACCENT.linear_multiply(0.35));
-    painter.text(btn_rect.center(), egui::Align2::CENTER_CENTER, "Reload page", 15.0, TEXT);
-    if resp.clicked() {
-        win.commands.borrow_mut().push(UiCommand::Reload);
-    }
 }
 
 pub fn draw(ctx: &Context, win: &KestrelWindow, rect: Rect, page: InternalPage) {
@@ -77,7 +56,7 @@ fn card(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
     egui::Frame::default()
         .fill(CARD)
         .inner_margin(12)
-        .corner_radius(6.0)
+        .corner_radius(egui::CornerRadius::same(6))
         .show(ui, |ui| add(ui));
     ui.add_space(8.0);
 }
@@ -148,7 +127,7 @@ fn draw_newtab(ui: &mut Ui, win: &KestrelWindow, rect: Rect) {
                 let label = if title.is_empty() { host_or_url(url) } else { title.clone() };
                 let btn = egui::Button::new(RichText::new(format!("{label}\n{url}")).small())
                     .min_size(egui::vec2(140.0, 54.0))
-                    .corner_radius(6.0);
+                    .corner_radius(egui::CornerRadius::same(6));
                 if ui.add(btn).clicked() {
                     win.commands.borrow_mut().push(UiCommand::Load(url.clone()));
                 }
@@ -176,12 +155,12 @@ fn draw_history(ui: &mut Ui, win: &KestrelWindow) {
                 .desired_width(400.0)
                 .show(ui);
             win.scratch_set("history.q", q);
-            if resp.changed() || resp.lost_focus() {
-                win.scratch_set("history.reload", true);
+            if resp.response.changed() || resp.response.lost_focus() {
+                win.scratch_set("history.reload", "1".into());
             }
             if ui.button("Clear all history").clicked() {
                 win.core.store.history_clear();
-                win.scratch_set("history.reload", true);
+                win.scratch_set("history.reload", "1".into());
             }
         });
     });
@@ -204,7 +183,7 @@ fn draw_history(ui: &mut Ui, win: &KestrelWindow) {
                     ui.label(RichText::new(format!("{visits} visits")).small().color(DIM));
                     if ui.small_button("✕").clicked() {
                         win.core.store.history_delete(url);
-                        win.scratch_set("history.reload", true);
+                        win.scratch_set("history.reload", "1".into());
                     }
                 });
                 ui.end_row();
@@ -237,7 +216,7 @@ fn draw_bookmarks(ui: &mut Ui, win: &KestrelWindow) {
                 if ui.link(RichText::new(label).color(TEXT)).clicked() {
                     win.commands.borrow_mut().push(UiCommand::Load(url.clone()));
                 }
-                ui.label(RichText::new(url).small().color(DIM));
+                ui.label(RichText::new(url.clone()).small().color(DIM));
                 if ui.small_button("Remove").clicked() {
                     win.core.store.bookmark_remove(&url);
                 }
@@ -294,7 +273,7 @@ fn draw_downloads(ui: &mut Ui, win: &KestrelWindow) {
                         "done" => (OK, "Completed"),
                         "failed" => (BAD, "Failed"),
                         "active" => (WARN, "Downloading"),
-                        _ => (DIM, &state.as_str()),
+                        _ => (DIM, state.as_str()),
                     };
                     ui.label(RichText::new(filename).color(TEXT));
                     ui.label(RichText::new(format!("{statelabel} · {}/{}", fmt_bytes(received), fmt_bytes(total))).small().color(color));
@@ -339,7 +318,7 @@ fn draw_privacy(ui: &mut Ui, win: &KestrelWindow) {
             if ui.small_button(if shield_on { "Turn off" } else { "Turn on" }).clicked() {
                 let v = if shield_on { "0" } else { "1" };
                 win.core.store.setting_set("shield.enabled", v);
-                win.reload_shield();
+                win.commands.borrow_mut().push(UiCommand::ReloadShield);
             }
         });
         ui.label(RichText::new(format!(
@@ -389,7 +368,7 @@ fn draw_privacy(ui: &mut Ui, win: &KestrelWindow) {
             ui.horizontal(|ui| {
                 if ui.checkbox(&mut enabled, name).changed() {
                     win.core.store.filter_list_set_enabled(id, enabled);
-                    win.reload_shield();
+                    win.commands.borrow_mut().push(UiCommand::ReloadShield);
                 }
                 let path = defaults.iter().find(|(i, _, _)| *i == id).map(|(_, p, _)| p.as_str()).unwrap_or("");
                 let exists = std::path::Path::new(path).exists();
@@ -412,7 +391,7 @@ fn draw_privacy(ui: &mut Ui, win: &KestrelWindow) {
                 });
             if level != fp_level.as_str() {
                 win.core.store.setting_set("privacy.fingerprint", &level);
-                win.apply_fingerprint_level();
+                win.commands.borrow_mut().push(UiCommand::ApplyFingerprintLevel);
             }
         });
         ui.label(RichText::new(
@@ -464,7 +443,7 @@ fn draw_settings(ui: &mut Ui, win: &KestrelWindow) {
                 hp = win.core.setting_str("general.homepage", "kestrel://newtab");
             }
             let r = egui::TextEdit::singleline(&mut hp).desired_width(320.0).show(ui);
-            if r.changed() {
+            if r.response.changed() {
                 win.scratch_set("set.homepage", hp.clone());
             }
             if ui.small_button("Save").clicked() {
@@ -481,7 +460,9 @@ fn draw_settings(ui: &mut Ui, win: &KestrelWindow) {
 
     card(ui, |ui| {
         ui.label(RichText::new("Kestrel Shield").strong().color(TEXT));
-        toggle(ui, win, "shield.enabled", "Block ads and trackers", true, |w| w.reload_shield());
+        toggle(ui, win, "shield.enabled", "Block ads and trackers", true, |w| {
+            w.commands.borrow_mut().push(UiCommand::ReloadShield);
+        });
         toggle(ui, win, "shield.https_first", "HTTPS-first upgrades", true, |_| {});
         toggle(ui, win, "shield.strip_tracking", "Strip tracking parameters", true, |_| {});
         toggle(ui, win, "shield.cosmetic", "Remove ad placeholders (cosmetic filtering)", true, |_| {});

@@ -3,9 +3,10 @@
 
 use crate::state::{host_or_url, InternalPage, MenuAction, Prompt, Tab, UiCommand};
 use crate::window::KestrelWindow;
-use egui::{Align, Color32, Id, Key, Layout, Order, RichText, TextEdit};
+use egui::{Align, Color32, Id, Key, Layout, Order, RichText, TextEdit, TopBottomPanel};
 use egui_glow::EguiGlow;
-use servo::OffscreenRenderingContext;
+use servo::{OffscreenRenderingContext, RenderingContext};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 const ACCENT: Color32 = Color32::from_rgb(0x7C, 0x6C, 0xFF);
@@ -47,9 +48,12 @@ impl SuggestItem {
     }
 }
 
-pub struct Gui {
+pub struct GlPart {
     rendering_context: Rc<OffscreenRenderingContext>,
     context: EguiGlow,
+}
+
+pub struct St {
     chrome_height: f32,
     location: String,
     location_dirty: bool,
@@ -61,6 +65,11 @@ pub struct Gui {
     last_repaint_need: bool,
 }
 
+pub struct Gui {
+    gl: RefCell<GlPart>,
+    st: RefCell<St>,
+}
+
 impl Gui {
     pub fn new(
         rendering_context: Rc<OffscreenRenderingContext>,
@@ -69,64 +78,69 @@ impl Gui {
         rendering_context.make_current().ok();
         let context = EguiGlow::new(event_loop, rendering_context.glow_gl_api(), None, None, false);
         Self {
-            rendering_context,
-            context,
-            chrome_height: 84.0,
-            location: String::new(),
-            location_dirty: false,
-            focus_omnibox_req: false,
-            suggestions: Vec::new(),
-            suggestion_sel: 0,
-            style_set: false,
-            prompt_text: String::new(),
-            last_repaint_need: false,
+            gl: RefCell::new(GlPart { rendering_context, context }),
+            st: RefCell::new(St {
+                chrome_height: 84.0,
+                location: String::new(),
+                location_dirty: false,
+                focus_omnibox_req: false,
+                suggestions: Vec::new(),
+                suggestion_sel: 0,
+                style_set: false,
+                prompt_text: String::new(),
+                last_repaint_need: false,
+            }),
         }
     }
 
     pub fn chrome_height(&self) -> f32 {
-        self.chrome_height
+        self.st.borrow().chrome_height
     }
 
     pub fn has_kb_focus(&self) -> bool {
-        self.context.egui_ctx.memory(|m| m.focused().is_some())
+        self.gl.borrow().context.egui_ctx.memory(|m| m.focused().is_some())
     }
 
     pub fn egui_wants_repaint(&self) -> bool {
-        self.last_repaint_need
+        self.st.borrow().last_repaint_need
     }
 
-    pub fn request_omnibox_focus(&mut self) {
-        self.focus_omnibox_req = true;
+    pub fn request_omnibox_focus(&self) {
+        self.st.borrow_mut().focus_omnibox_req = true;
     }
 
     pub fn on_window_event(
-        &mut self,
+        &self,
         window: &winit::window::Window,
         event: &winit::event::WindowEvent,
     ) -> egui_winit::EventResponse {
-        self.context.on_window_event(window, event)
+        self.gl.borrow_mut().context.on_window_event(window, event)
     }
 
-    pub fn update(&mut self, win: &KestrelWindow) {
-        self.rendering_context.make_current().ok();
-        let _ = self.context.run(&win.winit, |ctx| {
-            self.ui(ctx, win);
+    pub fn update(&self, win: &KestrelWindow) {
+        let mut gl = self.gl.borrow_mut();
+        let mut st = self.st.borrow_mut();
+        gl.rendering_context.make_current().ok();
+        let _ = gl.context.run(&win.winit, |ctx| {
+            draw_ui(ctx, win, &mut st);
         });
-        self.last_repaint_need = false;
+        st.last_repaint_need = false;
     }
 
-    pub fn paint(&mut self, window: &winit::window::Window) {
-        self.rendering_context.make_current().ok();
-        self.rendering_context.parent_context().prepare_for_rendering();
-        self.context.paint(window);
-        self.rendering_context.parent_context().present();
+    pub fn paint(&self, window: &winit::window::Window) {
+        let mut gl = self.gl.borrow_mut();
+        gl.rendering_context.make_current().ok();
+        gl.rendering_context.parent_context().prepare_for_rendering();
+        gl.context.paint(window);
+        gl.rendering_context.parent_context().present();
     }
+}
 
-    fn ensure_style(&mut self, ctx: &egui::Context) {
-        if self.style_set {
+fn ensure_style(st: &mut St, ctx: &egui::Context) {
+        if st.style_set {
             return;
         }
-        self.style_set = true;
+        st.style_set = true;
         ctx.style_mut(|style| {
             let v = &mut style.visuals;
             v.panel_fill = BG_PANEL;
@@ -139,9 +153,9 @@ impl Gui {
         });
     }
 
-    fn ui(&mut self, ctx: &egui::Context, win: &KestrelWindow) {
-        self.ensure_style(ctx);
-        self.sync_location(win);
+fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
+        ensure_style(st, ctx);
+        sync_location(win, st);
 
         // Background under the content area (webview blits first, then chrome paints;
         // for internal pages the page paints its own bg over this).
@@ -214,14 +228,14 @@ impl Gui {
         }
 
         // ---- Row 2: toolbar ----
-        let mut chrome_h = self.chrome_height;
+        let mut chrome_h = st.chrome_height;
         let mut suggestions_open = false;
         TopBottomPanel::top("toolbar")
             .frame(egui::Frame::default().fill(BG_PANEL).inner_margin(egui::Margin::symmetric(6, 5)))
             .show(ctx, |ui| {
                 chrome_h = ui.max_rect().bottom();
                 let tab = win.active_tab().cloned().unwrap_or_else(|| Tab {
-                    id: 0,
+                    id: 0u64,
                     webview: None,
                     internal: Some(InternalPage::NewTab),
                     url: String::new(),
@@ -277,7 +291,7 @@ impl Gui {
 
                     // Omnibox
                     let omni_id = Id::new("omnibox");
-                    let mut editing = self.location.clone();
+                    let mut editing = st.location.clone();
                     let out = TextEdit::singleline(&mut editing)
                         .id(omni_id)
                         .desired_width(ui.available_width() - 108.0)
@@ -285,17 +299,17 @@ impl Gui {
                         .show(ui);
                     let omnibox_rect = out.response.rect;
                     let editing_now = out.response.has_focus();
-                    if self.focus_omnibox_req {
+                    if st.focus_omnibox_req {
                         ctx.memory_mut(|m| m.request_focus(omni_id));
-                        self.focus_omnibox_req = false;
+                        st.focus_omnibox_req = false;
                     }
                     if editing_now {
-                        let changed = editing != self.location;
-                        self.location = editing.clone();
+                        let changed = editing != st.location;
+                        st.location = editing.clone();
                         if changed {
-                            self.location_dirty = true;
-                            self.rebuild_suggestions(win, &editing);
-                            self.suggestion_sel = 0;
+                            st.location_dirty = true;
+                            rebuild_suggestions(win, st, &editing);
+                            st.suggestion_sel = 0;
                         }
                     }
 
@@ -328,40 +342,40 @@ impl Gui {
                         )
                     });
                     let mut commit: Option<String> = None;
-                    if editing_now && !self.suggestions.is_empty() {
+                    if editing_now && !st.suggestions.is_empty() {
                         if down {
-                            self.suggestion_sel =
-                                (self.suggestion_sel + 1).min(self.suggestions.len() - 1);
+                            st.suggestion_sel =
+                                (st.suggestion_sel + 1).min(st.suggestions.len() - 1);
                         }
                         if up {
-                            self.suggestion_sel = self.suggestion_sel.saturating_sub(1);
+                            st.suggestion_sel = st.suggestion_sel.saturating_sub(1);
                         }
                         if tabk {
-                            self.suggestion_sel =
-                                (self.suggestion_sel + 1) % self.suggestions.len();
+                            st.suggestion_sel =
+                                (st.suggestion_sel + 1) % st.suggestions.len();
                         }
                         if esc {
-                            self.location_dirty = false;
+                            st.location_dirty = false;
                             ctx.memory_mut(|m| m.surrender_focus(omni_id));
                         }
                         if enter {
-                            let s = &self.suggestions[self.suggestion_sel.min(self.suggestions.len() - 1)];
+                            let s = &st.suggestions[st.suggestion_sel.min(st.suggestions.len() - 1)];
                             commit = Some(s.url().to_string());
                         }
                         suggestions_open = true;
                     } else if editing_now && enter {
-                        commit = Some(self.location.clone());
+                        commit = Some(st.location.clone());
                     }
                     if let Some(url) = commit {
-                        self.location_dirty = false;
+                        st.location_dirty = false;
                         ctx.memory_mut(|m| m.surrender_focus(omni_id));
                         win.commands.borrow_mut().push(UiCommand::Load(url));
                     }
 
                     // suggestions dropdown
                     if suggestions_open {
-                        let sugg = self.suggestions.clone();
-                        let sel = self.suggestion_sel;
+                        let sugg = st.suggestions.clone();
+                        let sel = st.suggestion_sel;
                         egui::Area::new(Id::new("suggestions"))
                             .order(Order::Foreground)
                             .fixed_pos(omnibox_rect.left_bottom() + egui::vec2(0.0, 4.0))
@@ -381,14 +395,14 @@ impl Gui {
                                                 .min_size(egui::vec2(ui.available_width(), 22.0)),
                                             );
                                             if r.clicked() {
-                                                self.location_dirty = false;
+                                                st.location_dirty = false;
                                                 ctx.memory_mut(|m| m.surrender_focus(omni_id));
                                                 win.commands
                                                     .borrow_mut()
                                                     .push(UiCommand::Load(s.url().to_string()));
                                             }
                                             if r.hovered() {
-                                                self.suggestion_sel = idx;
+                                                st.suggestion_sel = idx;
                                             }
                                         }
                                     });
@@ -420,12 +434,12 @@ impl Gui {
                         }
                         let menu_open = ui.memory(|m| m.is_popup_open(Id::new("main-menu")));
                         if menu_open {
-                            self.main_menu(ui, win, menu_resp.rect.left_bottom() + egui::vec2(0.0, 4.0));
+                            main_menu(ui, win, menu_resp.rect.left_bottom() + egui::vec2(0.0, 4.0));
                         }
                     });
                 });
             });
-        self.chrome_height = chrome_h;
+        st.chrome_height = chrome_h;
 
         // ---- content: internal page UI or servo webview blit ----
         let content = ctx.available_rect();
@@ -439,7 +453,7 @@ impl Gui {
                 let scale = win.winit.scale_factor() as f32;
                 let w = (content.width() * scale).max(1.0) as u32;
                 let h = (content.height() * scale).max(1.0) as u32;
-                if wv.size().width != w || wv.size().height != h {
+                if wv.size().width as u32 != w || wv.size().height as u32 != h {
                     wv.resize(winit::dpi::PhysicalSize::new(w, h));
                 }
                 wv.paint();
@@ -447,31 +461,22 @@ impl Gui {
         }
 
         // ---- modal prompts ----
-        self.draw_prompts(ctx, win);
+        draw_prompts(ctx, win, st);
     }
 
-    fn commit_omnibox(&mut self, win: &KestrelWindow, ctx: &egui::Context, omni_id: Id) {
-        let text = self.location.clone();
-        self.location_dirty = false;
-        ctx.memory_mut(|m| m.surrender_focus(omni_id));
-        win.commands.borrow_mut().push(UiCommand::Load(text));
+fn sync_location(win: &KestrelWindow, st: &mut St) {
+    if st.location_dirty {
+        return;
     }
-    #[allow(dead_code)]
-    fn unused_helper(&self) {}
-
-    fn sync_location(&mut self, win: &KestrelWindow) {
-        if self.location_dirty {
-            return;
-        }
-        if let Some(tab) = win.active_tab() {
-            if tab.url != self.location {
-                self.location = tab.url.clone();
-            }
+    if let Some(tab) = win.active_tab() {
+        if tab.url != st.location {
+            st.location = tab.url.clone();
         }
     }
+}
 
-    fn rebuild_suggestions(&mut self, win: &KestrelWindow, q: &str) {
-        self.suggestions.clear();
+fn rebuild_suggestions(win: &KestrelWindow, st: &mut St, q: &str) {
+        st.suggestions.clear();
         let q = q.trim();
         if q.is_empty() {
             return;
@@ -480,9 +485,9 @@ impl Gui {
             win.core.setting_str("general.search_engine", "https://duckduckgo.com/?q={q}");
         let normalized = crate::state::normalize_input(q, &search);
         if normalized != q {
-            self.suggestions.push(SuggestItem::Go(normalized));
+            st.suggestions.push(SuggestItem::Go(normalized));
         }
-        self.suggestions.push(SuggestItem::Search(q.to_string()));
+        st.suggestions.push(SuggestItem::Search(q.to_string()));
         if let Ok(items) =
             serde_json::from_str::<Vec<serde_json::Value>>(&win.core.store.bookmarks_json())
         {
@@ -491,31 +496,31 @@ impl Gui {
                 let url = it["url"].as_str().unwrap_or("");
                 let title = it["title"].as_str().unwrap_or("");
                 if url.to_lowercase().contains(&ql) || title.to_lowercase().contains(&ql) {
-                    self.suggestions.push(SuggestItem::Bookmark {
+                    st.suggestions.push(SuggestItem::Bookmark {
                         url: url.into(),
                         label: title_or_host(title, url),
                     });
-                    if self.suggestions.len() >= 8 {
+                    if st.suggestions.len() >= 8 {
                         break;
                     }
                 }
             }
         }
-        if self.suggestions.len() < 8 {
+        if st.suggestions.len() < 8 {
             if let Ok(items) =
                 serde_json::from_str::<Vec<serde_json::Value>>(&win.core.store.history_query(q, 6))
             {
                 for it in items {
                     let url = it["url"].as_str().unwrap_or("").to_string();
-                    if url.is_empty() || self.suggestions.iter().any(|s| s.url() == url) {
+                    if url.is_empty() || st.suggestions.iter().any(|s| s.url() == url) {
                         continue;
                     }
                     let title = it["title"].as_str().unwrap_or("");
-                    self.suggestions.push(SuggestItem::History {
+                    st.suggestions.push(SuggestItem::History {
                         url,
                         label: title_or_host(title, &it["url"].as_str().unwrap_or("")),
                     });
-                    if self.suggestions.len() >= 8 {
+                    if st.suggestions.len() >= 8 {
                         break;
                     }
                 }
@@ -523,7 +528,7 @@ impl Gui {
         }
     }
 
-    fn main_menu(&mut self, ui: &mut egui::Ui, win: &KestrelWindow, below: egui::Pos2) {
+fn main_menu(ui: &mut egui::Ui, win: &KestrelWindow, below: egui::Pos2) {
         egui::Area::new(Id::new("main-menu-area"))
             .order(Order::Foreground)
             .fixed_pos(below)
@@ -605,7 +610,7 @@ impl Gui {
         }
     }
 
-    fn draw_prompts(&mut self, ctx: &egui::Context, win: &KestrelWindow) {
+fn draw_prompts(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
         if win.prompts.borrow().is_empty() {
             return;
         }
@@ -637,41 +642,42 @@ impl Gui {
                                 b.first(),
                                 Some(Prompt::Dialog {
                                     control: Some(servo::EmbedderControl::SimpleDialog(
-                                        servo::SimpleDialog::Prompt(_)
+                                        servo::SimpleDialog::Prompt(_),
                                     )),
                                     ..
                                 })
                             )
                         };
                         if is_prompt {
-                            let mut t = self.prompt_text.clone();
+                            let mut t = st.prompt_text.clone();
                             let r = TextEdit::singleline(&mut t)
                                 .hint_text("Your answer")
                                 .desired_width(ui.available_width())
                                 .show(ui);
-                            self.prompt_text = t;
+                            st.prompt_text = t;
                             if r.response.lost_focus()
                                 && ui.input(|i| i.key_pressed(Key::Enter))
                             {
-                                win.resolve_prompt(true, self.prompt_text.clone());
-                                self.prompt_text.clear();
+                                let text = st.prompt_text.clone();
+                                st.prompt_text.clear();
+                                win.commands.borrow_mut().push(UiCommand::ResolvePrompt { allow: true, text });
                             }
                         }
                         ui.add_space(10.0);
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if ui.button("OK").clicked() {
-                                win.resolve_prompt(true, self.prompt_text.clone());
-                                self.prompt_text.clear();
+                                let text = st.prompt_text.clone();
+                                st.prompt_text.clear();
+                                win.commands.borrow_mut().push(UiCommand::ResolvePrompt { allow: true, text });
                             }
                             if ui.button("Cancel").clicked() {
-                                win.resolve_prompt(false, String::new());
-                                self.prompt_text.clear();
+                                st.prompt_text.clear();
+                                win.commands.borrow_mut().push(UiCommand::ResolvePrompt { allow: false, text: String::new() });
                             }
                         });
                     });
             });
     }
-}
 
 fn m_item(ui: &mut egui::Ui, label: &str, shortcut: &str, action: &mut impl FnMut()) {
     let r = ui
@@ -683,7 +689,7 @@ fn m_item(ui: &mut egui::Ui, label: &str, shortcut: &str, action: &mut impl FnMu
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     if r.clicked() {
         action();
-        ui.memory_mut(|m| m.close_popup());
+        ui.memory_mut(|m| m.close_popup(Id::new("main-menu")));
     }
 }
 

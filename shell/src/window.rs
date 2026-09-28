@@ -1,9 +1,10 @@
 //! KestrelWindow: winit window + GL contexts + Servo + tabs + input routing.
 
-use crate::delegate::{DelegateMsg, DelegateShared, KestrelDelegate, NoopServoDelegate};
+use crate::delegate::{DelegateShared, NoopServoDelegate};
 use crate::downloads;
 use crate::gui::Gui;
 use crate::state::*;
+use crate::state::DelegateMsg;
 use kestrel_core::privacy::{self, FingerprintLevel};
 use kestrel_core::KestrelCore;
 use servo::{
@@ -17,7 +18,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
-use winit::keyboard::ModifiersState as WinitModifiers;
 
 pub struct KestrelWindow {
     pub winit: winit::window::Window,
@@ -36,7 +36,7 @@ pub struct KestrelWindow {
     pub downloads_dir: PathBuf,
     pub needs_redraw: Cell<bool>,
     pub last_mouse: Cell<(f64, f64)>,
-    pub modifiers: Cell<WinitModifiers>,
+    pub modifiers: Cell<keyboard_types::Modifiers>,
     pub fullscreen: Cell<bool>,
     pub download_seq: Cell<u64>,
     pub session_clean_start: bool,
@@ -59,13 +59,14 @@ impl KestrelWindow {
         let winit = event_loop.create_window(attrs).map_err(|e| format!("window: {e}"))?;
         let size = winit.inner_size();
 
+        use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
         let display_handle = winit.display_handle().map_err(|e| e.to_string())?;
         let window_handle = winit.window_handle().map_err(|e| e.to_string())?;
         let window_ctx = Rc::new(
             WindowRenderingContext::new(display_handle, window_handle, size)
-                .map_err(|e| format!("gl context: {e}"))?,
+                .map_err(|e| format!("gl context: {e:?}"))?,
         );
-        window_ctx.make_current().map_err(|e| e.to_string())?;
+        window_ctx.make_current().map_err(|e| format!("{e:?}"))?;
         let offscreen_ctx = Rc::new(window_ctx.offscreen_context(size));
 
         let profile_dir = dirs::data_dir()
@@ -104,9 +105,9 @@ impl KestrelWindow {
         let mut win = Self {
             winit,
             window_ctx,
-            offscreen_ctx,
+            offscreen_ctx: offscreen_ctx.clone(),
             servo,
-            gui: RefCell::new(Gui::new(offscreen_ctx.clone(), event_loop)),
+            gui: RefCell::new(Gui::new(offscreen_ctx, event_loop)),
             tabs: Vec::new(),
             active: 0,
             core: core.clone(),
@@ -118,7 +119,7 @@ impl KestrelWindow {
             downloads_dir,
             needs_redraw: Cell::new(true),
             last_mouse: Cell::new((-1.0, -1.0)),
-            modifiers: Cell::new(WinitModifiers::empty()),
+            modifiers: Cell::new(keyboard_types::Modifiers::empty()),
             fullscreen: Cell::new(false),
             download_seq: Cell::new(0),
             session_clean_start,
@@ -136,7 +137,7 @@ impl KestrelWindow {
                 .and_then(|s| serde_json::from_str::<SessionData>(s).ok())
                 .filter(|s| s.clean)
                 .map(|s| s.tabs.into_iter().map(|t| (t.url, t.pinned)).collect())
-                .filter(|v| !v.is_empty())
+                .filter(|v: &Vec<(String, bool)>| !v.is_empty())
                 .unwrap_or_default()
         } else {
             Vec::new()
@@ -257,7 +258,6 @@ impl KestrelWindow {
             if let Some(wv) = &t.webview {
                 if i == idx {
                     wv.show();
-                    wv.set_focused(true);
                 } else {
                     wv.hide();
                 }
@@ -288,20 +288,25 @@ impl KestrelWindow {
             self.needs_redraw.set(true);
             return;
         }
-        {
+        let needs_new_webview = {
             let tab = self.active_tab_mut();
-            if tab.internal.is_some() || tab.webview.is_none() || tab.crashed.is_some() {
+            let need = tab.internal.is_some() || tab.webview.is_none() || tab.crashed.is_some();
+            if need {
                 if let Some(wv) = tab.webview.take() {
                     wv.hide();
                 }
-                match self.make_webview(&target) {
-                    Some(wv) => {
-                        tab.webview = Some(wv);
-                        tab.internal = None;
-                        tab.crashed = None;
-                    },
-                    None => return,
-                }
+            }
+            need
+        };
+        if needs_new_webview {
+            match self.make_webview(&target) {
+                Some(wv) => {
+                    let tab = self.active_tab_mut();
+                    tab.webview = Some(wv);
+                    tab.internal = None;
+                    tab.crashed = None;
+                },
+                None => return,
             }
         }
         let tab = self.active_tab_mut();
@@ -309,8 +314,8 @@ impl KestrelWindow {
         tab.title = String::new();
         tab.loading = true;
         if let Some(wv) = &tab.webview {
-            if let Ok(surl) = servo::ServoUrl::parse(&target) {
-                wv.load(surl);
+            if let Ok(u) = url::Url::parse(&target) {
+                wv.load(u);
             }
         }
         self.activate(self.active);
@@ -498,12 +503,12 @@ impl KestrelWindow {
             match cmd {
                 UiCommand::Back => {
                     if let Some(wv) = self.active_webview() {
-                        wv.go_back();
+                        wv.go_back(1);
                     }
                 },
                 UiCommand::Forward => {
                     if let Some(wv) = self.active_webview() {
-                        wv.go_forward();
+                        wv.go_forward(1);
                     }
                 },
                 UiCommand::Reload => {
@@ -516,7 +521,7 @@ impl KestrelWindow {
                     }
                 },
                 UiCommand::Load(input) => self.navigate_active(&input),
-                UiCommand::NewTab(url) => self.new_tab(url, None),
+                UiCommand::NewTab(url) => self.new_tab(url.unwrap_or_default(), None),
                 UiCommand::CloseTab(i) => self.close_tab(i),
                 UiCommand::SelectTab(i) => self.activate(i),
                 UiCommand::MoveTab(from, to) => {
@@ -540,7 +545,8 @@ impl KestrelWindow {
                     }
                 },
                 UiCommand::ReopenClosed => {
-                    if let Some(url) = self.closed_urls.borrow_mut().pop() {
+                    let url = self.closed_urls.borrow_mut().pop();
+                    if let Some(url) = url {
                         self.new_tab(url, None);
                     }
                 },
@@ -568,6 +574,9 @@ impl KestrelWindow {
                     self.needs_redraw.set(true);
                 },
                 UiCommand::MenuAction(a) => self.menu_action(a),
+                UiCommand::ResolvePrompt { allow, text } => self.resolve_prompt(allow, text),
+                UiCommand::ReloadShield => self.reload_shield(),
+                UiCommand::ApplyFingerprintLevel => self.apply_fingerprint_level(),
             }
         }
     }
@@ -592,8 +601,8 @@ impl KestrelWindow {
                     let path = self
                         .downloads_dir
                         .join(format!("kestrel-{}-{host}.bmp", now_stamp()));
-                    self.capture_pending.borrow_mut().push((url, path.clone()));
-                    self.shared.queue_capture(url, path);
+                    self.shared.queue_capture(url.clone(), path.clone());
+                    self.capture_pending.borrow_mut().push((url, path));
                 }
             },
             MenuAction::DownloadsPage => self.navigate_active("kestrel://downloads"),
@@ -627,7 +636,10 @@ impl KestrelWindow {
         core.store.download_update(&id, 0, 0, "active");
         wv.take_screenshot(None, move |result| {
             let ok = match result {
-                Ok(img) => save_image_bmp(&img.into_raw(), img.width(), img.height(), &path),
+                Ok(img) => {
+                    let (w, h) = (img.width(), img.height());
+                    save_image_bmp(&img.into_raw(), w, h, &path)
+                }
                 Err(_) => false,
             };
             core.store.download_update(&id, 0, 0, if ok { "done" } else { "failed" });
@@ -657,7 +669,7 @@ impl KestrelWindow {
 
     pub fn apply_fingerprint_level(&mut self) {
         // Recreate webviews with fresh UserContentManagers.
-        let urls: Vec<(u64, String, bool)> = self
+        let urls: Vec<(usize, String, bool)> = self
             .tabs
             .iter()
             .enumerate()
@@ -672,7 +684,6 @@ impl KestrelWindow {
                     if is_active {
                         if let Some(n) = &t.webview {
                             n.show();
-                            n.set_focused(true);
                         }
                     } else if let Some(n) = &t.webview {
                         n.hide();
@@ -688,10 +699,10 @@ impl KestrelWindow {
 
     pub fn clear_site_data(&self) {
         // Servo site data: cookies + storage via SiteDataManager.
+        self.servo.site_data_manager().clear_cookies(None);
         self.servo
             .site_data_manager()
-            .clear(None, |_| {})
-            .ok();
+            .clear_site_data(&[], servo::StorageType::all());
         self.needs_redraw.set(true);
     }
 
@@ -711,15 +722,15 @@ impl KestrelWindow {
                     if let Some(c) = control.take() {
                         match c {
                             servo::EmbedderControl::SimpleDialog(d) => match d {
-                                servo::webview_delegate::SimpleDialog::Alert(a) => a.confirm(),
-                                servo::webview_delegate::SimpleDialog::Confirm(c) => {
+                                servo::SimpleDialog::Alert(a) => a.confirm(),
+                                servo::SimpleDialog::Confirm(c) => {
                                     if allow {
                                         c.confirm()
                                     } else {
                                         c.dismiss()
                                     }
                                 },
-                                servo::webview_delegate::SimpleDialog::Prompt(mut p) => {
+                                servo::SimpleDialog::Prompt(mut p) => {
                                     if allow {
                                         p.set_current_value(&text);
                                         p.confirm();
@@ -780,67 +791,67 @@ impl KestrelWindow {
     }
 
     pub fn handle_window_event(&mut self, event: WindowEvent) {
+        use WindowEvent::*;
         match event {
-            WindowEvent::Resized(size) => {
+            RedrawRequested => {
+                self.render();
+                return;
+            },
+            CloseRequested => {
+                self.save_session(true);
+                std::process::exit(0);
+            },
+            ref e => {
+                let resp = self.gui.borrow_mut().on_window_event(&self.winit, e);
+                if resp.repaint {
+                    self.needs_redraw.set(true);
+                }
+                if resp.consumed {
+                    return;
+                }
+            },
+        }
+        match event {
+            Resized(size) => {
                 self.window_ctx.resize(size);
-                let ev = WindowEvent::Resized(size);
-                self.forward_to_egui(&ev);
                 self.needs_redraw.set(true);
             },
-            WindowEvent::ScaleFactorChanged { .. } => {
-                let ev = WindowEvent::ScaleFactorChanged {
-                    scale_factor: self.winit.scale_factor(),
-                    inner_size: self.winit.inner_size(),
-                };
-                self.forward_to_egui(&ev);
+            ScaleFactorChanged { .. } => {
                 if let Some(wv) = self.active_webview() {
                     wv.set_hidpi_scale_factor(self.hidpi_scale_factor());
                 }
                 self.needs_redraw.set(true);
             },
-            WindowEvent::RedrawRequested => {
-                self.render();
+            ModifiersChanged(m) => {
+                self.modifiers
+                    .set(winit_modifiers_to_kb(m.state()));
             },
-            WindowEvent::CloseRequested => {
-                self.save_session(true);
-                std::process::exit(0);
-            },
-            WindowEvent::Focused(focused) => {
-                self.forward_to_egui(&WindowEvent::Focused(focused));
-            },
-            WindowEvent::ModifiersChanged(m) => {
-                self.modifiers.set(m);
-                self.forward_to_egui(&WindowEvent::ModifiersChanged(m));
-            },
-            WindowEvent::CursorMoved { position, .. } => {
+            CursorMoved { position, .. } => {
                 self.last_mouse.set((position.x, position.y));
                 let chrome_top = self.chrome_height_px() * self.winit.scale_factor() as f32;
-                let in_chrome = position.y as f32 < chrome_top;
-                self.forward_to_egui(&WindowEvent::CursorMoved { position });
-                if !in_chrome {
-                    if let Some(wv) = self.active_webview() {
-                        let point = euclid::Point2D::new(
-                            position.x as f32,
-                            (position.y as f32 - chrome_top).max(0.0),
-                        );
-                        wv.notify_input_event(InputEvent::MouseMove(servo::MouseMoveEvent::new(point)));
-                    }
+                if (position.y as f32) < chrome_top {
+                    return; // over the chrome: egui owns it
+                }
+                if let Some(wv) = self.active_webview() {
+                    let point = servo::DevicePoint::new(
+                        position.x as f32,
+                        (position.y as f32 - chrome_top).max(0.0),
+                    );
+                    wv.notify_input_event(InputEvent::MouseMove(servo::MouseMoveEvent::new(point.into())));
                 }
             },
-            WindowEvent::CursorLeft => {
-                self.forward_to_egui(&WindowEvent::CursorLeft);
+            CursorLeft { .. } => {
                 if let Some(wv) = self.active_webview() {
                     wv.notify_input_event(InputEvent::MouseLeftViewport(Default::default()));
                 }
             },
-            WindowEvent::MouseInput { state, button, .. } => {
+            MouseInput { state, button, .. } => {
                 let (mx, my) = self.last_mouse.get();
                 let chrome_top = self.chrome_height_px() * self.winit.scale_factor() as f32;
-                let in_chrome = my >= 0.0 && (my as f32) < chrome_top;
-                if in_chrome {
-                    let ev = WindowEvent::MouseInput { device_id: event_device(), state, button };
-                    self.forward_to_egui(&ev);
-                } else if let Some(wv) = self.active_webview() {
+                if my >= 0.0 && (my as f32) < chrome_top {
+                    return;
+                }
+                if let Some(wv) = self.active_webview() {
                     let (sbtn, action) = (
                         match button {
                             MouseButton::Left => ServoMouseButton::Primary,
@@ -853,21 +864,17 @@ impl KestrelWindow {
                             ElementState::Released => MouseButtonAction::Up,
                         },
                     );
-                    let point = euclid::Point2D::new(mx as f32, (my as f32 - chrome_top).max(0.0));
-                    wv.notify_input_event(InputEvent::MouseButton(MouseButtonEvent::new(action, sbtn, point)));
+                    let point = servo::DevicePoint::new(mx as f32, (my as f32 - chrome_top).max(0.0));
+                    wv.notify_input_event(InputEvent::MouseButton(MouseButtonEvent::new(action, sbtn, point.into())));
                 }
             },
-            WindowEvent::MouseWheel { delta, .. } => {
+            MouseWheel { delta, .. } => {
                 let (mx, my) = self.last_mouse.get();
                 let chrome_top = self.chrome_height_px() * self.winit.scale_factor() as f32;
                 if my >= 0.0 && (my as f32) < chrome_top {
-                    let ev = WindowEvent::MouseWheel {
-                        device_id: event_device(),
-                        delta,
-                        phase: winit::event::TouchPhase::Moved,
-                    };
-                    self.forward_to_egui(&ev);
-                } else if let Some(wv) = self.active_webview() {
+                    return;
+                }
+                if let Some(wv) = self.active_webview() {
                     let (dx, dy) = match delta {
                         winit::event::MouseScrollDelta::LineDelta(x, y) => {
                             (x as f64 * 40.0, y as f64 * 40.0)
@@ -880,26 +887,19 @@ impl KestrelWindow {
                         z: 0.0,
                         mode: servo::WheelMode::DeltaPixel,
                     };
-                    let point =
-                        euclid::Point2D::new(mx as f32, (my as f32 - chrome_top).max(0.0));
-                    wv.notify_input_event(InputEvent::Wheel(servo::WheelEvent::new(wd, point)));
+                    let point = servo::DevicePoint::new(mx as f32, (my as f32 - chrome_top).max(0.0));
+                    wv.notify_input_event(InputEvent::Wheel(servo::WheelEvent::new(wd, point.into())));
                 }
             },
-            WindowEvent::KeyboardInput { event, .. } => {
-                if self.handle_shortcut(&event) {
+            KeyboardInput { event: kev, .. } => {
+                if self.handle_shortcut(&kev) {
                     return;
                 }
                 if self.gui.borrow().has_kb_focus() {
-                    let ev = WindowEvent::KeyboardInput {
-                        device_id: event_device(),
-                        is_synthetic: false,
-                        event,
-                    };
-                    self.forward_to_egui(&ev);
-                    return;
+                    return; // egui owns the keyboard while a field is focused
                 }
                 if let Some(wv) = self.active_webview() {
-                    let kb = keyboard_event_from_winit(&event, self.modifiers.get());
+                    let kb = keyboard_event_from_winit(&kev);
                     wv.notify_input_event(InputEvent::Keyboard(kb));
                 }
             },
@@ -907,28 +907,22 @@ impl KestrelWindow {
         }
     }
 
-    fn forward_to_egui(&mut self, event: &WindowEvent) {
-        let resp = self.gui.borrow_mut().on_window_event(&self.winit, event);
-        if resp.repaint {
-            self.needs_redraw.set(true);
-        }
-    }
-
-    fn handle_shortcut(&self, event: &winit::event::KeyEvent) -> bool {
+    fn handle_shortcut(&mut self, event: &winit::event::KeyEvent) -> bool {
         use winit::keyboard::{Key, NamedKey};
         if event.state != ElementState::Pressed {
             return false;
         }
         let m = self.modifiers.get();
-        let ctrl = m.control_key() || m.super_key();
+        use keyboard_types::Modifiers as KM;
+        let ctrl = m.contains(KM::CONTROL) || m.contains(KM::META);
         if let Key::Named(NamedKey::F11) = event.logical_key {
             self.set_fullscreen(!self.fullscreen.get());
             return true;
         }
         if !ctrl {
             // Alt+arrows for back/forward
-            if m.alt_key() {
-                match event.logical_key {
+            if m.contains(KM::ALT) {
+                match &event.logical_key {
                     Key::Named(winit::keyboard::NamedKey::ArrowLeft) => {
                         self.commands.borrow_mut().push(UiCommand::Back);
                         return true;
@@ -942,7 +936,7 @@ impl KestrelWindow {
             }
             return false;
         }
-        match event.logical_key {
+        match &event.logical_key {
             Key::Named(NamedKey::F5) => {
                 self.commands.borrow_mut().push(UiCommand::Reload);
                 true
@@ -1090,12 +1084,80 @@ impl KestrelWindow {
     }
 }
 
-fn event_device() -> winit::event::DeviceId {
-    // winit DeviceId is a wrapper around an internal id; constructing one for
-    // re-dispatched events is safe on all platforms via its unsafe API.
-    #[allow(unused_unsafe)]
-    unsafe {
-        winit::event::DeviceId::dummy()
+/// Map winit modifiers to keyboard-types modifiers.
+fn winit_modifiers_to_kb(m: winit::keyboard::ModifiersState) -> keyboard_types::Modifiers {
+    let mut out = keyboard_types::Modifiers::empty();
+    if m.control_key() { out |= keyboard_types::Modifiers::CONTROL; }
+    if m.shift_key() { out |= keyboard_types::Modifiers::SHIFT; }
+    if m.alt_key() { out |= keyboard_types::Modifiers::ALT; }
+    if m.super_key() { out |= keyboard_types::Modifiers::META; }
+    out
+}
+
+/// Convert winit key events to servo keyboard events.
+pub fn keyboard_event_from_winit(event: &winit::event::KeyEvent) -> servo::KeyboardEvent {
+    use winit::keyboard::{Key as WK, NamedKey as WN};
+    let key = match &event.logical_key {
+        WK::Character(c) => keyboard_types::Key::Character(c.to_string()),
+        WK::Named(n) => {
+            if *n == WN::Space {
+                keyboard_types::Key::Character(" ".to_string())
+            } else {
+                keyboard_types::Key::Named(named_to_kb(n))
+            }
+        },
+        _ => keyboard_types::Key::Named(keyboard_types::NamedKey::Unidentified),
+    };
+    let location = match event.location {
+        winit::keyboard::KeyLocation::Standard => keyboard_types::Location::Standard,
+        winit::keyboard::KeyLocation::Left => keyboard_types::Location::Left,
+        winit::keyboard::KeyLocation::Right => keyboard_types::Location::Right,
+        winit::keyboard::KeyLocation::Numpad => keyboard_types::Location::Numpad,
+    };
+    servo::KeyboardEvent::new(keyboard_types::KeyboardEvent {
+        state: match event.state {
+            ElementState::Pressed => keyboard_types::KeyState::Down,
+            ElementState::Released => keyboard_types::KeyState::Up,
+        },
+        key,
+        code: keyboard_types::Code::Unidentified, // physical codes unused by the shell
+        location,
+        modifiers: keyboard_types::Modifiers::empty(),
+        repeat: event.repeat,
+        is_composing: false,
+    })
+}
+
+fn named_to_kb(n: &winit::keyboard::NamedKey) -> keyboard_types::NamedKey {
+    use winit::keyboard::NamedKey as W;
+    match n {
+        W::Enter => keyboard_types::NamedKey::Enter,
+        W::Tab => keyboard_types::NamedKey::Tab,
+        W::ArrowDown => keyboard_types::NamedKey::ArrowDown,
+        W::ArrowUp => keyboard_types::NamedKey::ArrowUp,
+        W::ArrowLeft => keyboard_types::NamedKey::ArrowLeft,
+        W::ArrowRight => keyboard_types::NamedKey::ArrowRight,
+        W::Backspace => keyboard_types::NamedKey::Backspace,
+        W::Escape => keyboard_types::NamedKey::Escape,
+        W::Home => keyboard_types::NamedKey::Home,
+        W::End => keyboard_types::NamedKey::End,
+        W::PageUp => keyboard_types::NamedKey::PageUp,
+        W::PageDown => keyboard_types::NamedKey::PageDown,
+        W::Delete => keyboard_types::NamedKey::Delete,
+        W::Insert => keyboard_types::NamedKey::Insert,
+        W::F1 => keyboard_types::NamedKey::F1,
+        W::F2 => keyboard_types::NamedKey::F2,
+        W::F3 => keyboard_types::NamedKey::F3,
+        W::F4 => keyboard_types::NamedKey::F4,
+        W::F5 => keyboard_types::NamedKey::F5,
+        W::F6 => keyboard_types::NamedKey::F6,
+        W::F7 => keyboard_types::NamedKey::F7,
+        W::F8 => keyboard_types::NamedKey::F8,
+        W::F9 => keyboard_types::NamedKey::F9,
+        W::F10 => keyboard_types::NamedKey::F10,
+        W::F11 => keyboard_types::NamedKey::F11,
+        W::F12 => keyboard_types::NamedKey::F12,
+        _ => keyboard_types::NamedKey::Unidentified,
     }
 }
 
@@ -1170,27 +1232,9 @@ pub fn save_image_bmp(data: &[u8], w: u32, h: u32, path: &std::path::Path) -> bo
     std::fs::write(path, buf).is_ok()
 }
 
-/// Port of servoshell's winit → keyboard_types conversion.
-pub fn keyboard_event_from_winit(
-    event: &winit::event::KeyEvent,
-    modifiers: WinitModifiers,
-) -> servo::KeyboardEvent {
-    use winit::keyboard::PhysicalKey;
-    servo::KeyboardEvent {
-        id: 0,
-        state: match event.state {
-            ElementState::Pressed => servo::KeyState::Down,
-            ElementState::Released => servo::KeyState::Up,
-        },
-        key: event.logical_key.clone(),
-        code: match event.physical_key {
-            PhysicalKey::Code(c) => c,
-            PhysicalKey::Unidentified => servo::Code::Unidentified,
-        },
-        location: event.location,
-        repeat: event.repeat,
-        text: event.text.clone().map(|s| (*s).clone()),
-        is_composing: false,
-        modifiers: servo::ModifiersState::from_bits_truncate(modifiers.bits()),
+fn event_device() -> winit::event::DeviceId {
+    #[allow(unused_unsafe)]
+    unsafe {
+        winit::event::DeviceId::dummy()
     }
 }

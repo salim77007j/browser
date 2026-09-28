@@ -1,6 +1,6 @@
 //! Shared types: tabs, UI commands, delegate messages, events.
 
-use servo::webview_delegate::{EmbedderControl, PermissionRequest};
+use servo::{EmbedderControl, PermissionRequest};
 use servo::{WebView, WebViewId};
 
 /// Native (non-web) tab pages drawn directly with egui by the shell.
@@ -45,7 +45,7 @@ impl InternalPage {
 
 #[derive(Clone)]
 pub struct Tab {
-    pub id: WebViewId,
+    pub id: u64,
     pub webview: Option<WebView>,
     pub internal: Option<InternalPage>,
     pub url: String,
@@ -97,6 +97,9 @@ pub enum UiCommand {
     ZoomOut,
     ZoomReset,
     MenuAction(MenuAction),
+    ResolvePrompt { allow: bool, text: String },
+    ReloadShield,
+    ApplyFingerprintLevel,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -151,13 +154,11 @@ pub enum DelegateMsg {
 /// A modal prompt waiting for user action.
 pub enum Prompt {
     Permission {
-        webview_id: WebViewId,
         feature: String,
         host: String,
         request: Option<PermissionRequest>,
     },
     Dialog {
-        webview_id: WebViewId,
         control: Option<EmbedderControl>,
     },
 }
