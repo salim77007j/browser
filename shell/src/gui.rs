@@ -177,7 +177,7 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
         egui::Area::new(egui::Id::new("probe-area2"))
             .fixed_pos(egui::pos2(650.0, 190.0))
             .show(ctx, |ui| {
-                ui.add(egui::TopBottomPanel::top("probe-panel").frame(egui::Frame::default().fill(egui::Color32::GREEN)).show_inside(ui, |_| {}));
+                egui::TopBottomPanel::top("probe-panel").frame(egui::Frame::default().fill(egui::Color32::GREEN)).show_inside(ui, |_| {});
             });
 
         // Background under the content area (webview blits first, then chrome paints;
