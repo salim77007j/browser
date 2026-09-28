@@ -163,6 +163,10 @@ fn ensure_style(st: &mut St, ctx: &egui::Context) {
 fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
         ensure_style(st, ctx);
         sync_location(win, st);
+        let sr = ctx.screen_rect();
+        eprintln!("KESTREL: screen_rect={sr:?}");
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("probe")))
+            .rect_filled(egui::Rect::from_min_size(egui::pos2(200.0, 120.0), egui::vec2(400.0, 300.0)), 0.0, egui::Color32::RED);
 
         // Background under the content area (webview blits first, then chrome paints;
         // for internal pages the page paints its own bg over this).
