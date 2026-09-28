@@ -8,51 +8,65 @@ on:
 jobs:
   build-linux:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Qt6 + build deps
+      - name: System deps for QtWebEngine runtime
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            qt6-base-dev qt6-base-dev-tools qt6-webengine-dev libqt6webengine6-data \
-            qt6-svg-dev qt6-webchannel-dev qt6-positioning-dev qt6-declarative-dev \
-            qt6-declarative-dev-tools libqt6qmlcompiler6 libgl1-mesa-dev \
-            cmake ninja-build libasound2-dev nasm python3
+            libnss3 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 \
+            libasound2t64 libxtst6 libcups2t64 libxkbfile1 libdrm2 libxshmfence1 \
+            libx11-xcb1 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 \
+            libfontconfig1 libfreetype6 libdbus-1-3 libglib2.0-0t64 \
+            cmake ninja-build python3 file
+
+      - name: Install Qt 6.8 (gcc_64 + webengine)
+        run: |
+          pip install aqtinstall
+          aqt install-qt linux desktop 6.8.3 linux_gcc_64 -m qtwebengine qtshadertools --outputdir ~/Qt
+          ls ~/Qt/6.8.3/gcc_64/bin | head -5
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: |
+          export CMAKE_PREFIX_PATH=$HOME/Qt/6.8.3/gcc_64
+          export PATH=$HOME/Qt/6.8.3/gcc_64/bin:$PATH
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build -j$(nproc)
-
-      - name: Smoke test (offscreen launch)
         run: |
-          QT_QPA_PLATFORM=offscreen build/app/kestrel --version 2>/dev/null || true
-          echo "Binary info:" && file build/app/kestrel && ls -la build/app/kestrel
+          export CMAKE_PREFIX_PATH=$HOME/Qt/6.8.3/gcc_64
+          export PATH=$HOME/Qt/6.8.3/gcc_64/bin:$PATH
+          cmake --build build -j$(nproc)
 
-      - name: Bundle AppDir + AppImage-style tarball
+      - name: Bundle portable AppDir tarball
         run: |
-          mkdir -p Kestrel.AppDir/usr/bin Kestrel.AppDir/usr/lib Kestrel.AppDir/usr/share/applications
+          QTDIR=$HOME/Qt/6.8.3/gcc_64
+          mkdir -p Kestrel.AppDir/usr/bin Kestrel.AppDir/usr/lib Kestrel.AppDir/usr/share/qt6
           cp build/app/kestrel Kestrel.AppDir/usr/bin/
-          cp build/core/rust/release/LICENSE* Kestrel.AppDir/ 2>/dev/null || true
-          # Bundle Qt libs the binary needs
+          # Qt libraries
           ldd build/app/kestrel | grep -oP '/[^ ]+/libQt6[A-Za-z0-9]+\.so[^ ]*' | sort -u | while read -r lib; do
-            cp "$lib" Kestrel.AppDir/usr/lib/ 2>/dev/null || true
+            cp -L "$lib" Kestrel.AppDir/usr/lib/
           done
-          # QtWebEngine resources + process + icu
-          cp /usr/lib/qt6/libexec/QtWebEngineProcess Kestrel.AppDir/usr/lib/ 2>/dev/null || \
-             cp /usr/lib/*/qt6/libexec/QtWebEngineProcess Kestrel.AppDir/usr/lib/ 2>/dev/null || true
-          mkdir -p Kestrel.AppDir/usr/share/qt6
-          cp -r /usr/share/qt6/resources Kestrel.AppDir/usr/share/qt6/ 2>/dev/null || true
-          cp -r /usr/share/qt6/translations Kestrel.AppDir/usr/share/qt6/ 2>/dev/null || true
-          cp -r /usr/lib/*/qt6/plugins Kestrel.AppDir/usr/lib/qt6-plugins 2>/dev/null || \
-             cp -r /usr/lib/qt6/plugins Kestrel.AppDir/usr/lib/qt6-plugins 2>/dev/null || true
-          # launcher with correct env
+          for l in $QTDIR/lib/libQt6WebEngineCore.so* $QTDIR/lib/libQt6WebEngineWidgets.so*; do
+            cp -L "$l" Kestrel.AppDir/usr/lib/ 2>/dev/null || true
+          done
+          # WebEngine process + resources + translations + plugins
+          cp $QTDIR/libexec/QtWebEngineProcess Kestrel.AppDir/usr/lib/
+          cp -r $QTDIR/resources Kestrel.AppDir/usr/share/qt6/
+          cp -r $QTDIR/translations Kestrel.AppDir/usr/share/qt6/ || true
+          mkdir -p Kestrel.AppDir/usr/lib/qt6
+          cp -r $QTDIR/plugins Kestrel.AppDir/usr/lib/qt6/
+          cp -r $QTDIR/qml Kestrel.AppDir/usr/lib/qt6/ 2>/dev/null || true
+          # ICU + NSS deps bundled from system (distro-independent runtime)
+          ldd build/app/kestrel $QTDIR/libexec/QtWebEngineProcess 2>/dev/null | grep -oP '/[^ ]+/lib(nss3|nssutil3|smime3|icui18n|icuuc|icudata)[^ ]*\.so[^ ]*' | sort -u | while read -r lib; do
+            cp -L "$lib" Kestrel.AppDir/usr/lib/ 2>/dev/null || true
+          done
           cat > Kestrel.AppDir/usr/bin/kestrel-launcher << 'LAUNCH'
           #!/bin/bash
           DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -60,7 +74,8 @@ jobs:
           export QTWEBENGINEPROCESS_PATH="$DIR/usr/lib/QtWebEngineProcess"
           export QTWEBENGINE_RESOURCES_PATH="$DIR/usr/share/qt6/resources"
           export QTWEBENGINE_LOCALES_PATH="$DIR/usr/share/qt6/translations/qtwebengine_locales"
-          export QT_PLUGIN_PATH="$DIR/usr/lib/qt6-plugins"
+          export QT_PLUGIN_PATH="$DIR/usr/lib/qt6/plugins"
+          export LD_PRELOAD=""
           exec "$DIR/usr/bin/kestrel" "$@"
           LAUNCH
           chmod +x Kestrel.AppDir/usr/bin/kestrel-launcher
@@ -80,3 +95,4 @@ jobs:
         with:
           name: kestrel-linux-x64
           path: kestrel-linux-x64.tar.gz
+          retention-days: 30
