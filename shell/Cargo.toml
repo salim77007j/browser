@@ -27,6 +27,7 @@ crossbeam-channel = "0.5"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 keyboard-types = "0.8"
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
 dirs = "5"
 ureq = { version = "2", default-features = false, features = ["tls", "gzip"] }
 http = "1"

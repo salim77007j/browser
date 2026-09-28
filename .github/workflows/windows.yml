@@ -31,8 +31,10 @@ jobs:
         run: |
           $url = "https://github.com/servo/servo-build-deps/releases/download/msvc-deps/moztools-4.0.zip"
           Invoke-WebRequest -Uri $url -OutFile moztools.zip
-          Expand-Archive -Path moztools.zip -DestinationPath dependencies
-          Get-ChildItem dependencies\moztools
+          Expand-Archive -Path moztools.zip -DestinationPath moztools-x
+          New-Item -ItemType Directory -Force -Path dependencies\moztools\4.0 | Out-Null
+          Copy-Item moztools-x\moztools-4.0\* dependencies\moztools\4.0\ -Recurse -Force
+          Get-ChildItem dependencies\moztools\4.0 | Select-Object -First 8
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2

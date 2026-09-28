@@ -1045,9 +1045,17 @@ impl KestrelWindow {
     }
 
     fn render(&mut self) {
-        self.gui.borrow_mut().update(self);
-        self.gui.borrow_mut().paint(&self.winit);
+        eprintln!("KESTREL: render() called");
+        {
+            let gui = self.gui.borrow_mut();
+            gui.update(self);
+        }
+        {
+            let gui = self.gui.borrow_mut();
+            gui.paint(&self.winit);
+        }
         self.needs_redraw.set(false);
+        eprintln!("KESTREL: render() done");
     }
 
     pub fn on_external_change(&self) {

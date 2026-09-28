@@ -14,6 +14,10 @@ use state::KestrelEvent;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
+    // Servo enables both rustls providers; install one explicitly before any
+    // TLS-capable component initializes.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
     let args: Vec<String> = std::env::args().skip(1).collect();
     let initial_url = args.first().map(|s| s.clone());
 

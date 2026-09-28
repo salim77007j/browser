@@ -121,9 +121,16 @@ impl Gui {
         let mut gl = self.gl.borrow_mut();
         let mut st = self.st.borrow_mut();
         gl.rendering_context.make_current().ok();
-        let _ = gl.context.run(&win.winit, |ctx| {
-            draw_ui(ctx, win, &mut st);
-        });
+        eprintln!("KESTREL: frame begin");
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            gl.context.run(&win.winit, |ctx| {
+                draw_ui(ctx, win, &mut st);
+            })
+        }));
+        match result {
+            Ok(_) => eprintln!("KESTREL: frame ok"),
+            Err(_) => eprintln!("KESTREL: frame PANICKED"),
+        }
         st.last_repaint_need = false;
     }
 
