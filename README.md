@@ -1,85 +1,103 @@
 # Kestrel Browser 🦅
 
-**Swift. Lean. Untouchable.**
+**Fast. Light. Untouchable.**
 
-Kestrel is an independent, privacy-first web browser built for 2026.
-Rust core + Qt 6 native UI + Chromium-grade rendering — designed to be
-faster and lighter than the majors while blocking ads, trackers and
-fingerprinting by default.
+Kestrel v2 is an independent, privacy-first browser with a **pure-Rust stack**:
+a native Rust shell (winit + egui) hosting the **Servo web engine** — no bundled
+Chromium, no QtWebEngine, no web-based UI. Ad and tracker blocking is built in
+through **Kestrel Shield** (the same matching engine Brave uses, backed by
+EasyList + EasyPrivacy) and enforced at the resource-request level.
 
-![Kestrel New Tab](docs/img/ntp12.png)
+> v1 (Rust core + Qt6/QtWebEngine frontend) is preserved at tag
+> `v1-qtwebengine-legacy`. It was replaced because bundling a full Chromium is
+> exactly the herd behavior Kestrel set out to avoid — see
+> [docs/COMPETITIVE_ANALYSIS.md](docs/COMPETITIVE_ANALYSIS.md) for the real
+> competitor study that drove the redesign.
 
 ## Architecture
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│                    Qt 6 Widgets UI (C++)                   │
-│  TabStrip · Omnibox · Toolbar · kestrel:// pages (HTML)    │
-└───────────────┬─────────────────────────────▲──────────────┘
-                │ QWebEngineProfile            │ fetch bridge
-┌───────────────▼─────────────────────────────┴──────────────┐
-│              QtWebEngine (Chromium render)                 │
-│  · RequestInterceptor: ads/trackers, HTTPS-First,          │
-│    referer trimming, tracking-param stripping              │
-│  · Cookie filter · Permissions · Downloads · Lifecycle     │
-└───────────────┬────────────────────────────────────────────┘
-                │ C FFI
-┌───────────────▼────────────────────────────────────────────┐
-│                 kestrel-core (Rust)                        │
-│  · Brave adblock-rust engine (EasyList/EasyPrivacy/        │
-│    Fanboy Annoyances + custom rules, serialized cache)     │
-│  · SQLite store: history, bookmarks, downloads,            │
-│    permissions, per-host zoom, sessions, block stats       │
-└────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                 kestrel-shell (Rust)                     │
+│  winit window · native egui chrome (tabs, omnibox,       │
+│  menus, prompts) · kestrel:// native pages               │
+│  (newtab, settings, history, bookmarks, downloads,       │
+│  privacy dashboard — all real, all native)               │
+└───────────────┬───────────────────────▲──────────────────┘
+                │ WebViewDelegate API   │ request interception
+┌───────────────▼───────────────────────┴──────────────────┐
+│                    Servo 0.6 (Rust)                      │
+│  Independent web engine: SpiderMonkey JS, Stylo CSS,     │
+│  WebRender GPU compositing. Multiprocess-ready.          │
+└───────────────┬──────────────────────────────────────────┘
+                │ Rc
+┌───────────────▼──────────────────────────────────────────┐
+│                 kestrel-core (Rust)                      │
+│  Kestrel Shield: adblock-rust engine (Brave's crate)     │
+│  + EasyList/EasyPrivacy, cosmetic filtering              │
+│  Privacy engine: fingerprint farbling (canvas/WebGL/     │
+│  audio/fonts), HTTPS-first, tracking-param stripping     │
+│  SQLite store: history, bookmarks, downloads, settings,  │
+│  permissions, sessions, block statistics                 │
+└──────────────────────────────────────────────────────────┘
 ```
 
-## Feature set
+**Why this is different:** Chrome/Edge/Brave/Vivaldi all ship Chromium.
+Firefox ships Gecko. Kestrel v2 ships **Servo** — the independent Rust engine —
+behind a shell that stays out of your way and out of your RAM. The engine sits
+behind the embedder API, so WebKit/WebView2 adapters can follow without touching
+core logic.
 
-**Browser fundamentals**
-- Tabs: new / close / reopen closed / pin / mute / color groups / drag reorder / middle-click close
-- Smart omnibox: URL/search detection, local history completer, DuckDuckGo suggestions, security state
-- Bookmarks manager, History manager, Downloads manager (progress, open, remove)
-- Session restore + crash recovery, background tab freezing (LifecycleState)
-- Find in page (with match counts), zoom per site, fullscreen, print, save page (MHTML)
-- Developer tools, view source, private windows (off-the-record profile)
-- Full keyboard shortcut set (Chrome-compatible), 20+ shortcuts
-- Dark / light theme + 6 accent colors, `kestrel://ui/*` internal pages
+## Feature set (every control is wired to real behavior)
 
-**Privacy & security (all real, all verifiable)**
-- 🛡️ **Shield**: EasyList + EasyPrivacy + Fanboy Annoyances via Brave's Rust
-  adblock engine, with live blocked-count badge and per-host stats
-- **Fingerprint protection**: randomized canvas/AudioContext noise, WebGL
-  vendor masking, hardware spoofing (cores/deviceMemory) — standard/strict
-- **HTTPS-First**: upgrades http://→https:// with localhost exception and
-  TLS-failure fallback
-- **WebRTC leak protection**: public interfaces only (engine flag)
-- **Third-party cookie blocking** via cookie filter API
-- **Tracking-parameter stripping**: utm_*, fbclid, gclid, … removed from links
-- **Referer trimming**: cross-site requests send origin-only referer
-- **DoH** (DNS-over-HTTPS): Quad9 / Cloudflare / AdGuard / NextDNS
-- Hardened defaults: invalid TLS certs rejected, clipboard-restricted JS,
-  autoplay gated, per-site permission management
+- **Tabs**: new (Ctrl+T), close (Ctrl+W), reopen closed (Ctrl+Shift+T), switch
+  (Ctrl+Tab, click), middle-click close, pin, duplicate, context menu. Hidden
+  tabs are suspended (show/hide), so background tabs cost near-zero CPU.
+- **Omnibox**: URL/search detection, security dot (green https / amber http),
+  live suggestions from history + bookmarks + search, keyboard navigation.
+- **Kestrel Shield** (`kestrel://privacy`): live per-session and all-time block
+  counters, per-host breakdown, per-list toggles (EasyList/EasyPrivacy),
+  cosmetic filtering, honest engine posture disclosure.
+- **Fingerprint protection**: standard (canvas/WebGL/audio farbling, hardware
+  spoofing) and strict (adds uniform UA + font metric perturbation), applied
+  per-session per-site — toggle in settings, applies to new pages.
+- **HTTPS-first** upgrades + **tracking-parameter stripping** (utm_*, fbclid,
+  gclid, …) on every navigation.
+- **Real downloads**: file-type navigations are intercepted and fetched by
+  Kestrel's own manager with progress in `kestrel://downloads`.
+- **Permissions**: camera/mic/location/etc. prompts with per-host remember.
+- **Session**: crash-safe journaling every 15 s + restore on start.
+- **Page capture**: menu → "Capture page as image" saves a real screenshot.
+- **Zoom** per tab (Ctrl+Plus/Minus/0), fullscreen (F11), keyboard shortcuts.
+
+Honest limitations of v2.0 (also shown in-app): Servo is younger than Chromium
+— some heavy sites won't match Chrome yet; no extension API (Shield replaces
+the core ad-block use case); find-in-page and print are not wired yet because
+the engine does not expose those APIs to embedders.
 
 ## Building
 
-Requirements: Qt ≥ 6.5 (WebEngine), Rust stable, CMake ≥ 3.21, Ninja.
-
+Linux:
 ```bash
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-./build/app/kestrel
+sudo apt install build-essential clang libclang-dev cmake pkg-config python3 \
+  autoconf2.13 libfontconfig1-dev libdbus-1-dev libxkbcommon-dev \
+  libxkbcommon-x11-dev nasm
+cargo build --release -p kestrel-shell
+# binary: target/release/kestrel  (put easylist.txt/easyprivacy.txt next to it
+# in a `resources/` folder, or set KESTREL_RESOURCES)
 ```
 
-CI builds Windows (MSVC) and Linux artifacts on every push — see
-`.github/workflows/`.
+Windows: see `.github/workflows/windows.yml` (needs MozillaBuild "moztools 4.0"
+and LLVM for bindgen). CI builds both platforms on every push to `main` —
+artifacts: **kestrel-linux.zip**, **kestrel-windows.zip**.
 
-## Design
+## Testing & benchmarks
 
-See [DESIGN.md](docs/DESIGN.md) for the Kestrel design system:
-dark charcoal surfaces, electric-blue accent, rounded tabs, pill omnibox.
+- `cargo test -p kestrel-core` — privacy engine + state unit tests.
+- `tests/` — live test pages (ad-block probe, fingerprint probe).
+- `docs/BENCHMARKS.md` — measured startup/RAM/CPU vs Chromium & Firefox,
+  produced with `scripts/measure.py` under Xvfb, updated per release.
 
 ## License
 
-MIT for Kestrel code. Bundled filter lists are the property of their
-maintainers (EasyList/EasyPrivacy — GPL-ish community lists; Fanboy).
-qwebchannel.js is LGPL (Qt Company), used unmodified.
+MIT — see [LICENSE](LICENSE).

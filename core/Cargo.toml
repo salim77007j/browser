@@ -7,18 +7,18 @@ license = "MIT"
 
 [lib]
 name = "kestrel_core"
-crate-type = ["staticlib", "rlib"]
+crate-type = ["rlib"]
+
+[features]
+default = []
+# Legacy C ABI for the v1 Qt frontend. Not used by v2 (kestrel-shell).
+capi = []
 
 [dependencies]
 adblock = { version = "0.9", default-features = false, features = ["full-regex-handling", "object-pooling", "embedded-domain-resolver"] }
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.38", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+url = "2"
 # rmp 0.8.15 removed free fns that rmp-serde 0.15.x calls; pin the working release
 rmp = "=0.8.14"
-
-[profile.release]
-opt-level = 3
-lto = "thin"
-codegen-units = 4
-strip = true

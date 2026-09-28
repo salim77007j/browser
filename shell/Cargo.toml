@@ -1,0 +1,30 @@
+[package]
+name = "kestrel-shell"
+version = "2.0.0"
+edition = "2021"
+description = "Kestrel Browser v2 shell: Servo engine + native egui chrome (Rust)"
+license = "MIT"
+
+[[bin]]
+name = "kestrel"
+path = "src/main.rs"
+
+[dependencies]
+kestrel-core = { path = "../core" }
+servo = { version = "0.6.0", default-features = false, features = [
+    "bundled", "clipboard", "js_jit", "webgl", "background_hang_monitor",
+] }
+winit = "0.30.13"
+egui = "0.34.3"
+egui-winit = { version = "0.34.3", default-features = false, features = ["clipboard", "wayland"] }
+egui_glow = { version = "0.34.3", features = ["winit"] }
+glow = "0.17.0"
+euclid = { workspace = true }
+url = { workspace = true }
+log = { workspace = true }
+env_logger = "0.11"
+crossbeam-channel = "0.5"
+serde_json = { workspace = true }
+dirs = "5"
+ureq = { version = "2", default-features = false, features = ["tls", "gzip"] }
+http = "1"

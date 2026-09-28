@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = ["core", "shell"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+euclid = "0.22"
+url = "2"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
+debug = false
+panic = "unwind"

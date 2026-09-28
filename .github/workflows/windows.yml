@@ -1,66 +1,63 @@
-name: Windows Build
+name: Windows build
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 jobs:
-  build-windows:
+  build:
     runs-on: windows-2022
-    timeout-minutes: 60
+    timeout-minutes: 240
+    env:
+      MOZTOOLS_PATH: ${{ github.workspace }}\dependencies\moztools\4.0
+      LIBCLANG_PATH: ${{ env.LLVM_PATH }}\bin
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Qt 6.8.2 (win64_msvc2022_64 + webengine)
-        shell: pwsh
-        run: |
-          pip install aqtinstall
-          aqt install-qt windows desktop 6.8.2 win64_msvc2022_64 -m qtwebengine qtwebchannel qtpositioning --outputdir C:\Qt
-          if (-not (Test-Path C:\Qt\6.8.2\msvc2022_64\bin\Qt6Core.dll)) { throw "Qt install failed" }
-
-      - name: Install Rust
+      - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Configure (MSVC + Ninja)
-        shell: cmd
-        run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          set PATH=C:\Qt\6.8.2\msvc2022_64\bin;%PATH%
-          set CMAKE_PREFIX_PATH=C:\Qt\6.8.2\msvc2022_64
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl
+      - name: Install LLVM (clang for bindgen)
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "17"
 
-      - name: Build
-        shell: cmd
-        run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          set PATH=C:\Qt\6.8.2\msvc2022_64\bin;%PATH%
-          set CMAKE_PREFIX_PATH=C:\Qt\6.8.2\msvc2022_64
-          cmake --build build --parallel
+      - name: Install NASM
+        run: choco install nasm -y --no-progress
 
-      - name: Deploy + package
+      - name: Download moztools (MozillaBuild for SpiderMonkey)
+        run: |
+          $url = "https://github.com/servo/servo-build-deps/releases/download/msvc-deps/moztools-4.0.zip"
+          Invoke-WebRequest -Uri $url -OutFile moztools.zip
+          Expand-Archive -Path moztools.zip -DestinationPath dependencies
+          Get-ChildItem dependencies\moztools
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+          cache-on-failure: true
+
+      - name: Test core
+        run: cargo test -p kestrel-core
+
+      - name: Build shell (release)
+        run: cargo build --release -p kestrel-shell
+
+      - name: Package
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $exe = Get-ChildItem -Path build -Recurse -Filter kestrel.exe | Select-Object -First 1
-          if (-not $exe) { Get-ChildItem -Path build -Recurse -Filter *.exe | Select-Object FullName; throw "kestrel.exe not found" }
-          Copy-Item $exe.FullName dist\kestrel.exe
-          & C:\Qt\6.8.2\msvc2022_64\bin\windeployqt.exe --release --no-translations dist\kestrel.exe
-          Copy-Item C:\Qt\6.8.2\msvc2022_64\bin\QtWebEngineProcess.exe dist\ -ErrorAction SilentlyContinue
-          Copy-Item C:\Qt\6.8.2\msvc2022_64\bin\Qt6WebEngineCore.dll dist\ -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path dist\resources | Out-Null
-          Copy-Item C:\Qt\6.8.2\msvc2022_64\resources\* dist\resources\ -ErrorAction SilentlyContinue
-          Get-ChildItem dist | Select-Object Name, Length
-
-      - name: Zip artifact
-        shell: pwsh
-        run: |
-          Compress-Archive -Path dist\* -DestinationPath kestrel-windows-x64.zip
-          Get-Item kestrel-windows-x64.zip | Select-Object Name, Length
+          Copy-Item target\release\kestrel.exe dist\
+          Copy-Item shell\resources\*.txt dist\resources\ -ErrorAction SilentlyContinue
+          Compress-Archive -Path dist\* -DestinationPath kestrel-windows.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kestrel-windows-x64
-          path: kestrel-windows-x64.zip
+          name: kestrel-windows
+          path: kestrel-windows.zip
           retention-days: 30
