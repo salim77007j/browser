@@ -21,6 +21,7 @@ jobs:
             libx11-xcb1 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 \
             libfontconfig1 libfreetype6 libdbus-1-3 libglib2.0-0t64 \
+            libgl1-mesa-dev libegl-dev libgles-dev libglx-dev libopengl-dev \
             cmake ninja-build python3 file
 
       - name: Install Qt 6.8 (gcc_64 + webengine)
