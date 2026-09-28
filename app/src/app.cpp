@@ -207,7 +207,7 @@ void KestrelApp::reloadFilters() {
     QJsonObject payload{{"lists", lists}, {"custom", getSetting("custom_rules", "")}};
     const int ok = kestrel_reload_filters(static_cast<KestrelCore *>(m_core),
                            QJsonDocument(payload).toJson(QJsonDocument::Compact).constData());
-    fprintf(stderr, "[kestrel] filter engine reload: %d (%d lists)\n", ok, lists.size());
+    fprintf(stderr, "[kestrel] filter engine reload: %d (%lld lists)\n", ok, static_cast<long long>(lists.size()));
 }
 
 QStringList KestrelApp::filterListPaths() const {
