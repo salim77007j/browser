@@ -270,6 +270,7 @@ impl KestrelWindow {
     }
 
     pub fn navigate_active(&mut self, input: &str) {
+        eprintln!("KESTREL: navigate to {:?}", &input[..input.len().min(50)]);
         let search = self
             .core
             .setting_str("general.search_engine", "https://duckduckgo.com/?q={q}");
@@ -502,6 +503,9 @@ impl KestrelWindow {
 
     pub fn process_commands(&mut self) {
         let cmds: Vec<UiCommand> = std::mem::take(&mut *self.commands.borrow_mut());
+        for c in &cmds {
+            eprintln!("KESTREL: cmd {:?}", match c { UiCommand::Load(u) => format!("Load({})", &u[..u.len().min(40)]), UiCommand::NewTab(_) => "NewTab".into(), other => format!("{:?}", match other { _ => "other" }) });
+        }
         for cmd in cmds {
             match cmd {
                 UiCommand::Back => {
