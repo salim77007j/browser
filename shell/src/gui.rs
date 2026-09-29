@@ -169,11 +169,6 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
         ensure_style(st, ctx);
         sync_location(win, st);
 
-        // Background under the content area (webview blits first, then chrome paints;
-        // for internal pages the page paints its own bg over this).
-        ctx.layer_painter(egui::LayerId::new(Order::Background, Id::new("content-bg")))
-            .rect_filled(ctx.screen_rect(), 0.0, BG);
-
         // ---- Row 1: tab strip ----
         let mut close_idx: Option<usize> = None;
         TopBottomPanel::top("tabstrip")
