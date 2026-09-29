@@ -502,9 +502,6 @@ impl KestrelWindow {
 
     pub fn process_commands(&mut self) {
         let cmds: Vec<UiCommand> = std::mem::take(&mut *self.commands.borrow_mut());
-        if !cmds.is_empty() {
-            eprintln!("KESTREL: commands: {}", cmds.len());
-        }
         for cmd in cmds {
             match cmd {
                 UiCommand::Back => {
@@ -808,6 +805,12 @@ impl KestrelWindow {
                 std::process::exit(0);
             },
             ref e => {
+                // Shell shortcuts win over both egui and the page.
+                if let WindowEvent::KeyboardInput { event: kev, .. } = e {
+                    if self.handle_shortcut(kev) {
+                        return;
+                    }
+                }
                 let resp = self.gui.borrow_mut().on_window_event(&self.winit, e);
                 if resp.repaint {
                     self.needs_redraw.set(true);
@@ -901,13 +904,8 @@ impl KestrelWindow {
                 }
             },
             KeyboardInput { event: kev, .. } => {
-                eprintln!("KESTREL: key {:?} text={:?} ctrl={}", kev.logical_key, kev.text, self.modifiers.get().contains(keyboard_types::Modifiers::CONTROL));
-                if self.handle_shortcut(&kev) {
-                    return;
-                }
-                if self.gui.borrow().has_kb_focus() {
-                    return; // egui owns the keyboard while a field is focused
-                }
+                // Not a shell shortcut and not consumed by egui (no focused field):
+                // deliver to the page.
                 if let Some(wv) = self.active_webview() {
                     let kb = keyboard_event_from_winit(&kev);
                     wv.notify_input_event(InputEvent::Keyboard(kb));

@@ -376,7 +376,7 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
                             commit = Some(s.url().to_string());
                         }
                         st.suggestions_open = true;
-                    } else if editing_now && enter {
+                    } else if out.response.lost_focus() && enter {
                         commit = Some(st.location.clone());
                     }
                     if let Some(url) = commit {
