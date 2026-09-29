@@ -131,10 +131,9 @@ impl KestrelWindow {
             render_count: Cell::new(0),
         };
 
-        let _ = winit.focus_window();
-
         let restore: Option<String> = core.store.session_load();
         let restore_on = core.setting_bool("session.restore", true);
+        let _ = winit.focus_window();
         let urls: Vec<(String, bool)> = if restore_on {
             restore
                 .as_deref()
@@ -899,7 +898,7 @@ impl KestrelWindow {
                 }
             },
             KeyboardInput { event: kev, .. } => {
-                eprintln!("KESTREL: key {:?} text={:?} ctrl={}", kev.logical_key, kev.text, self.modifiers.get().control_key());
+                eprintln!("KESTREL: key {:?} text={:?} ctrl={}", kev.logical_key, kev.text, self.modifiers.get().contains(keyboard_types::Modifiers::CONTROL));
                 if self.handle_shortcut(&kev) {
                     return;
                 }
