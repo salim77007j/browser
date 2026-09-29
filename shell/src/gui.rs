@@ -306,6 +306,11 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
                         .show(ui);
                     let omnibox_rect = out.response.rect;
                     let editing_now = out.response.has_focus();
+                    let focus_gained = editing_now && !st.omnibox_focused;
+                    if focus_gained && !st.location_dirty {
+                        // Chrome-style: focusing the omnibox clears it so typing replaces.
+                        st.location.clear();
+                    }
                     st.omnibox_focused = editing_now;
                     if st.focus_omnibox_req {
                         ctx.memory_mut(|m| m.request_focus(omni_id));
@@ -381,7 +386,7 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
                     }
 
                     // suggestions dropdown
-                    if suggestions_open {
+                    if st.suggestions_open {
                         let sugg = st.suggestions.clone();
                         let sel = st.suggestion_sel;
                         egui::Area::new(Id::new("suggestions"))
