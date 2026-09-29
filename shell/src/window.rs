@@ -852,6 +852,9 @@ impl KestrelWindow {
                 }
             },
             MouseInput { state, button, .. } => {
+                if state == ElementState::Pressed {
+                    let _ = self.winit.focus_window();
+                }
                 let (mx, my) = self.last_mouse.get();
                 let chrome_top = self.chrome_height_px() * self.winit.scale_factor() as f32;
                 if my >= 0.0 && (my as f32) < chrome_top {

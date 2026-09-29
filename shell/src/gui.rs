@@ -434,18 +434,57 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
                         win.commands.borrow_mut().push(UiCommand::MenuAction(MenuAction::BookmarkToggle));
                     }
 
-                    // menu
+                    // menu (egui 0.34 Popup API)
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let menu_resp = ui.add(egui::Button::new("☰").min_size(egui::vec2(30.0, 26.0)));
-                        eprintln!("KESTREL: menu btn rect={:?} clicked={} hovered={}", menu_resp.rect, menu_resp.clicked(), menu_resp.hovered());
-                        if menu_resp.clicked() {
-                            ui.memory_mut(|m| m.toggle_popup(Id::new("main-menu")));
-                        }
-                        let menu_open = ui.memory(|m| m.is_popup_open(Id::new("main-menu")));
-                        st.menu_open = menu_open;
-                        if menu_open {
-                            main_menu(ui, win, menu_resp.rect.left_bottom() + egui::vec2(0.0, 4.0));
-                        }
+                        st.menu_open = ui.memory(|m| m.is_popup_open(menu_resp.id.with("popup")));
+                        egui::Popup::menu(&menu_resp).show(|ui| {
+                            let zoom = win.active_tab().map(|t| t.zoom).unwrap_or(1.0);
+                            let close_id = menu_resp.id.with("popup");
+                            m_item(ui, "New tab", "Ctrl+T", &mut || {
+                                win.commands.borrow_mut().push(UiCommand::NewTab(None))
+                            }, close_id);
+                            m_item(ui, "Bookmark this page", "Ctrl+D", &mut || {
+                                win.commands.borrow_mut().push(UiCommand::MenuAction(MenuAction::BookmarkToggle))
+                            }, close_id);
+                            m_item(ui, "Capture page as image", "", &mut || {
+                                win.commands.borrow_mut().push(UiCommand::MenuAction(MenuAction::CapturePage))
+                            }, close_id);
+                            ui.separator();
+                            m_item(ui, "History", "Ctrl+H", &mut || {
+                                win.commands.borrow_mut().push(UiCommand::MenuAction(MenuAction::HistoryPage))
+                            }, close_id);
+                            m_item(ui, "Bookmarks", "Ctrl+Shift+O", &mut || {
+                                win.commands.borrow_mut().push(UiCommand::MenuAction(MenuAction::BookmarksPage))
+                            }, close_id);
+                            m_item(ui, "Downloads", "Ctrl+J", &mut || {
+                                win.commands.borrow_mut().push(UiCommand::MenuAction(MenuAction::DownloadsPage))
+                            }, close_id);
+                            ui.separator();
+                            m_item(ui, &format!("Zoom in ({:.0}%)", zoom * 100.0), "Ctrl++", &mut || {
+                                win.commands.borrow_mut().push(UiCommand::ZoomIn)
+                            }, close_id);
+                            m_item(ui, "Zoom out", "Ctrl+-", &mut || {
+                                win.commands.borrow_mut().push(UiCommand::ZoomOut)
+                            }, close_id);
+                            m_item(ui, "Reset zoom", "Ctrl+0", &mut || {
+                                win.commands.borrow_mut().push(UiCommand::ZoomReset)
+                            }, close_id);
+                            ui.separator();
+                            m_item(ui, "Kestrel Shield dashboard", "Ctrl+P", &mut || {
+                                win.commands.borrow_mut().push(UiCommand::MenuAction(MenuAction::PrivacyPage))
+                            }, close_id);
+                            m_item(ui, "Settings", "Ctrl+,", &mut || {
+                                win.commands.borrow_mut().push(UiCommand::MenuAction(MenuAction::SettingsPage))
+                            }, close_id);
+                            m_item(ui, "About Kestrel", "", &mut || {
+                                win.commands.borrow_mut().push(UiCommand::MenuAction(MenuAction::AboutPage))
+                            }, close_id);
+                            ui.separator();
+                            m_item(ui, "Exit", "Ctrl+Q", &mut || {
+                                win.commands.borrow_mut().push(UiCommand::MenuAction(MenuAction::Exit))
+                            }, close_id);
+                        });
                     });
                 });
             });
@@ -538,88 +577,6 @@ fn rebuild_suggestions(win: &KestrelWindow, st: &mut St, q: &str) {
         }
     }
 
-fn main_menu(ui: &mut egui::Ui, win: &KestrelWindow, below: egui::Pos2) {
-        egui::Area::new(Id::new("main-menu-area"))
-            .order(Order::Foreground)
-            .fixed_pos(below)
-            .show(ui.ctx(), |ui| {
-                egui::Frame::default()
-                    .fill(BG_PANEL)
-                    .inner_margin(6)
-                    .show(ui, |ui| {
-                        ui.set_min_width(250.0);
-                        ui.with_layout(Layout::top_down_justified(Align::LEFT), |ui| {
-                            let zoom = win.active_tab().map(|t| t.zoom).unwrap_or(1.0);
-                            m_item(ui, "New tab", "Ctrl+T", &mut || {
-                                win.commands.borrow_mut().push(UiCommand::NewTab(None))
-                            });
-                            m_item(ui, "Bookmark this page", "Ctrl+D", &mut || {
-                                win.commands
-                                    .borrow_mut()
-                                    .push(UiCommand::MenuAction(MenuAction::BookmarkToggle))
-                            });
-                            m_item(ui, "Capture page as image", "", &mut || {
-                                win.commands
-                                    .borrow_mut()
-                                    .push(UiCommand::MenuAction(MenuAction::CapturePage))
-                            });
-                            ui.separator();
-                            m_item(ui, "History", "Ctrl+H", &mut || {
-                                win.commands
-                                    .borrow_mut()
-                                    .push(UiCommand::MenuAction(MenuAction::HistoryPage))
-                            });
-                            m_item(ui, "Bookmarks", "Ctrl+Shift+O", &mut || {
-                                win.commands
-                                    .borrow_mut()
-                                    .push(UiCommand::MenuAction(MenuAction::BookmarksPage))
-                            });
-                            m_item(ui, "Downloads", "Ctrl+J", &mut || {
-                                win.commands
-                                    .borrow_mut()
-                                    .push(UiCommand::MenuAction(MenuAction::DownloadsPage))
-                            });
-                            ui.separator();
-                            m_item(ui, &format!("Zoom in ({:.0}%)", zoom * 100.0), "Ctrl++", &mut || {
-                                win.commands.borrow_mut().push(UiCommand::ZoomIn)
-                            });
-                            m_item(ui, "Zoom out", "Ctrl+-", &mut || {
-                                win.commands.borrow_mut().push(UiCommand::ZoomOut)
-                            });
-                            m_item(ui, "Reset zoom", "Ctrl+0", &mut || {
-                                win.commands.borrow_mut().push(UiCommand::ZoomReset)
-                            });
-                            ui.separator();
-                            m_item(ui, "Kestrel Shield dashboard", "Ctrl+P", &mut || {
-                                win.commands
-                                    .borrow_mut()
-                                    .push(UiCommand::MenuAction(MenuAction::PrivacyPage))
-                            });
-                            m_item(ui, "Settings", "Ctrl+,", &mut || {
-                                win.commands
-                                    .borrow_mut()
-                                    .push(UiCommand::MenuAction(MenuAction::SettingsPage))
-                            });
-                            m_item(ui, "About Kestrel", "", &mut || {
-                                win.commands
-                                    .borrow_mut()
-                                    .push(UiCommand::MenuAction(MenuAction::AboutPage))
-                            });
-                            ui.separator();
-                            m_item(ui, "Exit", "Ctrl+Q", &mut || {
-                                win.commands
-                                    .borrow_mut()
-                                    .push(UiCommand::MenuAction(MenuAction::Exit))
-                            });
-                        });
-                    });
-            });
-        // click-away closes
-        if ui.input(|i| i.pointer.any_click()) {
-            // handled by memory popup logic; keep open state managed by toggle
-        }
-    }
-
 fn draw_prompts(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
         if win.prompts.borrow().is_empty() {
             return;
@@ -689,7 +646,7 @@ fn draw_prompts(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
             });
     }
 
-fn m_item(ui: &mut egui::Ui, label: &str, shortcut: &str, action: &mut impl FnMut()) {
+fn m_item(ui: &mut egui::Ui, label: &str, shortcut: &str, action: &mut impl FnMut(), popup_id: Id) {
     let r = ui
         .add(
             egui::Button::new(RichText::new(format!("{label:<26}{shortcut}")).small())
@@ -699,7 +656,7 @@ fn m_item(ui: &mut egui::Ui, label: &str, shortcut: &str, action: &mut impl FnMu
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     if r.clicked() {
         action();
-        ui.memory_mut(|m| m.close_popup(Id::new("main-menu")));
+        ui.memory_mut(|m| m.close_popup(popup_id));
     }
 }
 
