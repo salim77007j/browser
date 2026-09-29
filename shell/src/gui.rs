@@ -442,6 +442,7 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
                                                 .fill(if is_sel { BG_HOVER } else { Color32::TRANSPARENT })
                                                 .min_size(egui::vec2(ui.available_width(), 22.0)),
                                             );
+                                            eprintln!("KESTREL: row {} rect={:?} clicked={} hovered={} pointer={:?}", idx, r.rect, r.clicked(), r.hovered(), ctx.pointer_hover_pos().map(|p| (p.x, p.y)));
                                             if r.clicked() {
                                                 st.location_dirty = false;
                                                 ctx.memory_mut(|m| m.surrender_focus(omni_id));
