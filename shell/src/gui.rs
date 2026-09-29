@@ -339,6 +339,20 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
                         .show(ui);
                     let omnibox_rect = out.response.rect;
                     let editing_now = out.response.has_focus();
+                    if editing_now && !st.omnibox_focused {
+                        // Chrome-style: focusing selects all, so typing replaces.
+                        let len = st.location.chars().count();
+                        if len > 0 {
+                            let mut ts = egui::TextEdit::load_state(ctx, omni_id);
+                            if let Some(ts) = ts.as_mut() {
+                                ts.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                                    egui::text::cursor::CCursor::new(0),
+                                    egui::text::cursor::CCursor::new(len),
+                                )));
+                                egui::TextEdit::store_state(ctx, omni_id, ts.unwrap());
+                            }
+                        }
+                    }
                     let focus_gained = editing_now && !st.omnibox_focused;
                     st.omnibox_focused = editing_now;
                     if st.focus_omnibox_req {
@@ -346,13 +360,8 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
                         st.focus_omnibox_req = false;
                     }
                     if editing_now {
-                        let mut changed = editing != st.location;
+                        let changed = editing != st.location;
                         st.location = editing.clone();
-                        if focus_gained && !st.location_dirty {
-                            // Chrome-style select-all-on-focus: typing replaces.
-                            st.location.clear();
-                            changed = true;
-                        }
                         if changed {
                             st.location_dirty = true;
                             let q = st.location.clone();
