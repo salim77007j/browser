@@ -1057,9 +1057,11 @@ impl KestrelWindow {
             let gui = self.gui.borrow_mut();
             gui.update(self);
         }
+        let webview = self.active_webview();
+        let chrome = self.chrome_height_px();
         {
             let gui = self.gui.borrow_mut();
-            gui.paint(&self.winit);
+            gui.paint(&self.winit, webview, chrome);
         }
         // egui needs a few warm-up frames after startup (font atlas upload,
         // area positioning). Keep redrawing for the first few frames.

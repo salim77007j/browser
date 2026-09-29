@@ -139,10 +139,34 @@ impl Gui {
         st.last_repaint_need = false;
     }
 
-    pub fn paint(&self, window: &winit::window::Window) {
+    pub fn paint(&self, window: &winit::window::Window, webview: Option<servo::WebView>, chrome_height: f32) {
         let mut gl = self.gl.borrow_mut();
         gl.rendering_context.make_current().ok();
         gl.rendering_context.parent_context().prepare_for_rendering();
+        // Clear the content region (egui only paints the chrome; without this,
+        // stale frames persist where the webview has not blitted yet).
+        let scale = window.scale_factor() as f32;
+        let size = window.inner_size();
+        let chrome_top = (chrome_height * scale).max(0.0) as i32;
+        let clear_h = (size.height as i32 - chrome_top).max(0);
+        let glow_gl = gl.rendering_context.glow_gl_api();
+        use glow::HasContext as _;
+        unsafe {
+            glow_gl.enable(glow::SCISSOR_TEST);
+            glow_gl.scissor(0, 0, size.width as i32, clear_h);
+            glow_gl.clear_color(0.078, 0.078, 0.106, 1.0); // #14141B
+            glow_gl.clear(glow::COLOR_BUFFER_BIT);
+            glow_gl.disable(glow::SCISSOR_TEST);
+        }
+        // Blit the active webview below the chrome.
+        if let Some(wv) = webview {
+            let w = size.width;
+            let h = (size.height as i32 - chrome_top).max(1) as u32;
+            if wv.size().width as u32 != w || wv.size().height as u32 != h {
+                wv.resize(winit::dpi::PhysicalSize::new(w, h));
+            }
+            wv.paint();
+        }
         gl.context.paint(window);
         gl.rendering_context.parent_context().present();
     }
@@ -235,6 +259,7 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
         }
 
         // ---- Row 2: toolbar ----
+        st.suggestions_open = false;
         let mut chrome_h = st.chrome_height;
         let mut suggestions_open = false;
         TopBottomPanel::top("toolbar")
