@@ -855,6 +855,7 @@ impl KestrelWindow {
                 }
             },
             MouseInput { state, button, .. } => {
+                eprintln!("KESTREL: mouse {:?} {:?} at {:?}", state, button, self.last_mouse.get());
                 if state == ElementState::Pressed {
                     let _ = self.winit.focus_window();
                 }

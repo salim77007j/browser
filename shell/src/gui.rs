@@ -421,6 +421,7 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
                     }
 
                     // suggestions dropdown
+                    eprintln!("KESTREL: ptr any_down={} any_click={} layer_top={:?}", ctx.input(|i| i.pointer.any_down()), ctx.input(|i| i.pointer.any_click()), ctx.layer_id_at(ctx.pointer_hover_pos().unwrap_or_default()).map(|l| format!("{:?} @ {:?}", l.order, l.id)) );
                     if st.suggestions_open {
                         let sugg = st.suggestions.clone();
                         let sel = st.suggestion_sel;
