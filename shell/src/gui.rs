@@ -458,6 +458,7 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
         // ---- content: internal page UI or servo webview blit ----
         let content = ctx.available_rect();
         if let Some(tab) = win.active_tab().cloned() {
+            eprintln!("KESTREL: content branch internal={:?} webview={} url={}", tab.internal.is_some(), tab.webview.is_some(), &tab.url[..tab.url.len().min(40)]);
             if let Some(crash) = &tab.crashed {
                 let reason = crash.clone();
                 crate::pages::draw_crash(ctx, win, content, &reason);
