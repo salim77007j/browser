@@ -103,6 +103,7 @@ impl KestrelWindow {
             .or_else(dirs::home_dir)
             .unwrap_or_else(|| PathBuf::from("."));
 
+        let _ = winit.focus_window();
         let mut win = Self {
             winit,
             window_ctx,
@@ -133,7 +134,6 @@ impl KestrelWindow {
 
         let restore: Option<String> = core.store.session_load();
         let restore_on = core.setting_bool("session.restore", true);
-        let _ = winit.focus_window();
         let urls: Vec<(String, bool)> = if restore_on {
             restore
                 .as_deref()
