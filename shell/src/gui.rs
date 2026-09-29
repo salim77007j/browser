@@ -323,6 +323,12 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
 
                     // Omnibox
                     let omni_id = Id::new("omnibox");
+                    // Snapshot raw key state BEFORE the TextEdit consumes Enter.
+                    let enter = ctx.input(|i| {
+                        i.events.iter().any(|e| matches!(
+                            e, egui::Event::Key { key: egui::Key::Enter, pressed: true, .. }
+                        ))
+                    });
                     let mut editing = st.location.clone();
                     let out = TextEdit::singleline(&mut editing)
                         .id(omni_id)
