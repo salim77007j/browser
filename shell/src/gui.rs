@@ -437,6 +437,7 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
                     // menu
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let menu_resp = ui.add(egui::Button::new("☰").min_size(egui::vec2(30.0, 26.0)));
+                        eprintln!("KESTREL: menu btn rect={:?} clicked={} hovered={}", menu_resp.rect, menu_resp.clicked(), menu_resp.hovered());
                         if menu_resp.clicked() {
                             ui.memory_mut(|m| m.toggle_popup(Id::new("main-menu")));
                         }

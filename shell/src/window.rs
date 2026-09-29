@@ -131,6 +131,8 @@ impl KestrelWindow {
             render_count: Cell::new(0),
         };
 
+        let _ = winit.focus_window();
+
         let restore: Option<String> = core.store.session_load();
         let restore_on = core.setting_bool("session.restore", true);
         let urls: Vec<(String, bool)> = if restore_on {
@@ -501,6 +503,9 @@ impl KestrelWindow {
 
     pub fn process_commands(&mut self) {
         let cmds: Vec<UiCommand> = std::mem::take(&mut *self.commands.borrow_mut());
+        if !cmds.is_empty() {
+            eprintln!("KESTREL: commands: {}", cmds.len());
+        }
         for cmd in cmds {
             match cmd {
                 UiCommand::Back => {
@@ -894,6 +899,7 @@ impl KestrelWindow {
                 }
             },
             KeyboardInput { event: kev, .. } => {
+                eprintln!("KESTREL: key {:?} text={:?} ctrl={}", kev.logical_key, kev.text, self.modifiers.get().control_key());
                 if self.handle_shortcut(&kev) {
                     return;
                 }
