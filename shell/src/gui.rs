@@ -327,6 +327,8 @@ fn draw_ui(ctx: &egui::Context, win: &KestrelWindow, st: &mut St) {
                     let enter = ctx.input(|i| {
                         i.events.iter().any(|e| matches!(
                             e, egui::Event::Key { key: egui::Key::Enter, pressed: true, .. }
+                        )) || i.events.iter().any(|e| matches!(
+                            e, egui::Event::Text(t) if t == "\n" || t == "\r"
                         ))
                     });
                     let mut editing = st.location.clone();
